@@ -1,0 +1,61 @@
+/* 🌙 Header Title */
+.header-title {
+  content-align: center middle;
+  color:  #d6ed64;
+  background:  #313244;
+  padding: 0 1;
+  text-style: bold;
+  border-bottom: solid #b4befe;
+}
+
+/* 📦 Container List */
+#container-list {
+  padding: 1;
+  height: 1fr;
+  overflow: auto;
+  border: round #45475a;
+  background: #1e1e2e;
+}
+
+/* 📄 Container Card */
+.container-card {
+  padding: 0 1;
+  border-bottom: solid #585b70;
+  layout: grid;
+  grid-size: 3;
+  grid-columns: 2fr 2fr 3fr;
+  background: #313244;
+}
+
+
+.container-card:focus {
+  background: #2f3038;
+  color: #d6ed64;
+  border: round #d6ed64;
+}
+
+.container-card:hover {
+  background: #45475a;
+}
+
+/* 🔤 Column Styling */
+.col {
+  padding: 0;
+  content-align: left middle;
+}
+
+
+.col.name {
+  text-style: bold;
+  color: #94e2d5;  /* teal */
+}
+
+.col.image {
+  color: #a6e3a1;  /* green */
+}
+
+.col.status {
+  color: #f9e2af;  /* yellow */
+}
+
+
