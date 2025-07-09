@@ -6,6 +6,9 @@ from service import get_containers, start_container, stop_container
 from typing import Dict
 from container_logs import show_logs
 from container_shell import run_exec_shell
+from container_action_menu import ContainerActionScreen
+from textual.message import Message
+from textual import on
 
 
 class ContainerCard(Static):
@@ -101,6 +104,28 @@ class DockerManager(App):
         focused = self.screen.focused
         if isinstance(focused, ContainerCard):
             show_logs(focused.container_id)
+
+    def action_open_menu(self):
+        focused = self.screen.focused
+        if isinstance(focused, ContainerCard):
+            self.push_screen(ContainerActionScreen(focused.container_id))
+
+    def on_container_action_screen_selected(
+        self, message: ContainerActionScreen.Selected
+    ):
+        cid = message.container_id
+        action = message.action
+
+        if action == "start":
+            start_container(cid)
+        elif action == "stop":
+            stop_container(cid)
+        elif action == "logs":
+            show_logs(cid)
+        elif action == "exec":
+            run_exec_shell(cid)
+
+        self.action_run_ls()
 
 
 if __name__ == "__main__":

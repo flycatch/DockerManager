@@ -59,3 +59,34 @@
 }
 
 
+Screen {
+  align: center middle;
+  content-align: center middle;
+  background: #1e1e2e 95%;
+}
+.modal-card {
+  layout: vertical;
+  padding: 2;
+  width: 100%;
+  max-width: 150;
+  border: round #d6ed64;
+  background: #313244;
+}
+
+.menu-title {
+  text-style: bold;
+  color: #d6ed64;
+  padding: 1;
+  content-align: center middle;
+  border-bottom: solid #45475a;
+  margin-bottom: 1;
+  background: #1e1e2e;
+}
+
+.menu-keys {
+  color: #a6adc8;
+  text-style: italic;
+  content-align: center middle;
+  padding-top: 1;
+}
+
