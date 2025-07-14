@@ -1,26 +1,27 @@
 /* 🌙 Header Title */
 .header-title {
   content-align: center middle;
-  color:  #d6ed64;
-  background:  #313244;
+  color: #d6ed64;
+  background: #313244;
   padding: 0 1;
   text-style: bold;
   border-bottom: solid #b4befe;
+  margin: 1 0;
 }
 
 /* 📦 Container List */
 #container-list {
   padding: 1;
+  margin: 1 0;
   height: 1fr;
   overflow: auto;
   border: round #45475a;
   background: #1e1e2e;
 }
 
-/* 📄 Container Card */
 .container-card {
   padding: 0 1;
-  border-bottom: solid #585b70;
+  border: solid #585b70; /* Always apply full border */
   layout: grid;
   grid-size: 3;
   grid-columns: 2fr 2fr 3fr;
@@ -28,14 +29,18 @@
 }
 
 
+
+/* 🟡 Focused Container */
 .container-card:focus {
+  border: solid #d6ed64; /* Just change the color, layout remains the same */
   background: #2f3038;
   color: #d6ed64;
-  border: round #d6ed64;
 }
 
+/* 🟣 Hovered Container */
 .container-card:hover {
   background: #45475a;
+  outline: solid #7f849c;
 }
 
 /* 🔤 Column Styling */
@@ -44,49 +49,89 @@
   content-align: left middle;
 }
 
-
 .col.name {
   text-style: bold;
-  color: #94e2d5;  /* teal */
+  color: #94e2d5;
 }
 
 .col.image {
-  color: #a6e3a1;  /* green */
+  color: #a6e3a1;
 }
 
 .col.status {
-  color: #f9e2af;  /* yellow */
+  color: #f9e2af;
 }
 
-
+/* 🌌 Screen Layout */
 Screen {
   align: center middle;
   content-align: center middle;
   background: #1e1e2e 95%;
+  padding: 1;
 }
+
+
+/* 💬 Modal Card */
 .modal-card {
   layout: vertical;
-  padding: 2;
+  padding: 1 2;
   width: 100%;
-  max-width: 150;
+  max-width: 100%;
   border: round #d6ed64;
   background: #313244;
 }
 
+/* 📝 Menu Title */
 .menu-title {
   text-style: bold;
   color: #d6ed64;
   padding: 1;
   content-align: center middle;
-  border-bottom: solid #45475a;
-  margin-bottom: 1;
+  border: round #585b70;
+  margin: 1 0;
   background: #1e1e2e;
 }
 
+/* ⌨️ Menu Key Hints */
 .menu-keys {
   color: #a6adc8;
   text-style: italic;
   content-align: center middle;
-  padding-top: 1;
+  padding: 1 0 0 0;
 }
 
+/* 🔍 Input Field Base */
+.menu-input,
+#log-filter {
+  padding: 0 1;
+  border: round #585b70;
+  background: #1e1e2e;
+  color: #cdd6f4;
+}
+
+/* 🪵 Log Container */
+.log-container {
+  height: 1fr;
+  overflow: auto;
+  background: #1e1e2e;
+  border: round #45475a;
+  margin: 1 0;
+}
+
+/* 📤 Log Output */
+#log-output.log-text {
+  padding: 1;
+  color: #cdd6f4;
+  background: transparent;
+  text-wrap: wrap;
+}
+
+/* 📜 Scroll View for Logs */
+ScrollView#logs {
+  height: 1fr;
+  padding: 1;
+  background: #1e1e2e;
+  color: #cdd6f4;
+  border: round #89b4fa;
+  margin: 1 0;
+}
