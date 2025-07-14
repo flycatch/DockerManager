@@ -1,36 +1,45 @@
-import subprocess
-import shutil
-import json
+import requests_unixsocket
+from typing import Generator
+
+DOCKER_SOCKET_URL = "http+unix://%2Fvar%2Frun%2Fdocker.sock"
+session = requests_unixsocket.Session()
 
 
-def show_logs(container_id: str, tail: int = 100):
-    def is_running(cid: str) -> bool:
-        try:
-            out = subprocess.check_output(["docker", "inspect", cid])
-            return json.loads(out)[0]["State"]["Running"]
-        except:
-            return False
+def stream_logs(
+    container_id: str,
+    follow: bool = False,
+    stdout: bool = True,
+    stderr: bool = True,
+    tail: str = "100",
+    timestamps: bool = False,
+    since: int = 0,
+    until: int = 0,
+) -> Generator[str, None, None]:
+    params = {
+        "follow": str(follow).lower(),
+        "stdout": str(stdout).lower(),
+        "stderr": str(stderr).lower(),
+        "tail": tail,
+        "timestamps": str(timestamps).lower(),
+    }
 
-    follow = is_running(container_id)
-    # Use bash -i -c to keep shell open after logs
-    log_cmd = f"docker logs {'-f' if follow else ''} --tail {tail} {container_id}; echo ''; echo 'Press any key to exit...'; read -n 1"
+    if since:
+        params["since"] = str(since)
+    if until:
+        params["until"] = str(until)
 
-    wrapped_cmd = f'bash -i -c "{log_cmd}"'
+    url = f"{DOCKER_SOCKET_URL}/containers/{container_id}/logs"
+    response = session.get(url, params=params, stream=True)
 
-    terminal_commands = [
-        ["kitty", "sh", "-c", wrapped_cmd],
-        ["gnome-terminal", "--", "bash", "-i", "-c", log_cmd],
-        ["xterm", "-hold", "-e", log_cmd],
-        ["alacritty", "-e", "bash", "-i", "-c", log_cmd],
-        ["konsole", "-e", "bash", "-i", "-c", log_cmd],
-    ]
+    if response.status_code != 200:
+        yield f"[ERROR] HTTP {response.status_code} while fetching logs."
+        return
 
-    for cmd in terminal_commands:
-        if shutil.which(cmd[0]):
+    # Docker multiplexed format: 8-byte header + content
+    for chunk in response.iter_lines(decode_unicode=False):
+        if chunk:
+            line = chunk[8:] if len(chunk) > 8 else chunk
             try:
-                subprocess.Popen(cmd)
-                return
-            except Exception as e:
-                print(f"❌ Failed to launch logs with {cmd[0]}: {e}")
-
-    print("❌ No compatible terminal found to show logs.")
+                yield line.decode("utf-8", errors="ignore")
+            except Exception:
+                yield "<decode error>"

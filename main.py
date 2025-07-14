@@ -4,16 +4,14 @@ from textual.containers import Vertical
 from bindings import APP_BINDINGS
 from service import get_containers, start_container, stop_container
 from typing import Dict
-from container_logs import show_logs
 from container_shell import run_exec_shell
 from container_action_menu import ContainerActionScreen
-from textual.message import Message
-from textual import on
 
 
 class ContainerCard(Static):
-    def __init__(self, container_id: str, name: str, image: str, status: str):
+    def __init__(self, idx: int, container_id: str, name: str, image: str, status: str):
         super().__init__(classes="container-card")
+        self.idx = idx 
         self.container_id = container_id
         self.container_name = name
         self.image = image
@@ -23,7 +21,7 @@ class ContainerCard(Static):
     can_focus = True
 
     def compose(self) -> ComposeResult:
-        yield Static(f"[b]{self.container_name}[/b]", classes="col name")
+        yield Static(f"[b]{self.idx}. {self.container_name}[/b]", classes="col name")
         yield Static(self.image, classes="col image")
         self.status_widget = Static(self.status, classes="col status")
         yield self.status_widget
@@ -38,6 +36,7 @@ class ContainerCard(Static):
 class DockerManager(App):
     CSS_PATH = "ui.tcss"
     BINDINGS = APP_BINDINGS  # pyright: ignore
+    ENABLE_COMMAND_PALETTE = False
 
     def __init__(self):
         super().__init__()
@@ -62,14 +61,14 @@ class DockerManager(App):
         containers = get_containers()
         seen_ids = set()
 
-        for container_id, name, image, status in containers:
+        for idx, container_id, name, image, status in containers:
             seen_ids.add(container_id)
 
             if container_id in self.cards:
                 card = self.cards[container_id]
                 card.update_status(status)
             else:
-                card = ContainerCard(container_id, name, image, status)
+                card = ContainerCard(idx,container_id, name, image, status)
                 self.cards[container_id] = card
                 self.container_list.mount(card)
 
@@ -100,15 +99,10 @@ class DockerManager(App):
         if isinstance(focused, ContainerCard):
             run_exec_shell(focused.container_id)
 
-    def action_logs_selected(self):
-        focused = self.screen.focused
-        if isinstance(focused, ContainerCard):
-            show_logs(focused.container_id)
-
     def action_open_menu(self):
         focused = self.screen.focused
         if isinstance(focused, ContainerCard):
-            self.push_screen(ContainerActionScreen(focused.container_id))
+            self.push_screen(ContainerActionScreen(focused.container_id, focused.container_name))
 
     def on_container_action_screen_selected(
         self, message: ContainerActionScreen.Selected
@@ -121,7 +115,7 @@ class DockerManager(App):
         elif action == "stop":
             stop_container(cid)
         elif action == "logs":
-            show_logs(cid)
+            self.push_screen(ContainerActionScreen(cid, ''))
         elif action == "exec":
             run_exec_shell(cid)
 

@@ -19,13 +19,15 @@ multidict==6.6.3
 platformdirs==4.3.8
 propcache==0.3.2
 Pygments==2.19.2
+pyperclip==1.9.0
 requests==2.32.4
 requests-unixsocket==0.4.1
 rich==14.0.0
-textual==3.5.0
+textual==3.7.1
 textual-dev==1.7.0
 textual-serve==1.1.2
 typing_extensions==4.14.0
 uc-micro-py==1.0.3
 urllib3==2.5.0
+websocket-client==1.8.0
 yarl==1.20.1
