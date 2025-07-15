@@ -1,19 +1,25 @@
 from textual.screen import Screen
-from textual.widgets import Static, Input
+from textual.widgets import Static, Input, Footer, TabbedContent, TabPane
 from textual.message import Message
 from textual.binding import Binding
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import VerticalScroll
+from textual.events import Key
+import asyncio
+
 from container_logs import stream_logs
+from container_exec import open_docker_shell
 
 
 class ContainerActionScreen(Screen):
     BINDINGS = [
         Binding("s", "do_action('start')", "Start"),
         Binding("p", "do_action('stop')", "Stop"),
-        Binding("l", "show_logs", "Logs"),
-        Binding("e", "do_action('exec')", "Shell"),
+        Binding("d", "do_action('delete')", "Delete"),
+        Binding("l", "switch_tab('Logs')", "Logs Tab"),
+        Binding("t", "switch_tab('Terminal')", "Shell Tab"),
         Binding("/", "focus_filter", "Filter Logs"),
-        Binding("escape", "handle_escape", "Close or Exit Filter"),
+        Binding("ctrl+l", "clear_shell", "Clear Shell"),
+        Binding("escape", "handle_escape", "Close"),
     ]
 
     class Selected(Message):
@@ -27,76 +33,102 @@ class ContainerActionScreen(Screen):
         self.container_id = container_id
         self.container_name = container_name
         self.log_lines: list[str] = []
+        self.shell_lines: list[str] = []
         self.keep_streaming = False
         self.filter_text = ""
-        self.logs_visible = False
+        self.shell_reader = None
+        self.shell_writer = None
+        self.command_history: list[str] = []
+        self.history_index: int = -1
 
     def compose(self):
-        with Vertical(classes="modal-card"):
-            yield Static(
-                f"[b]Actions for: {self.container_id} {self.container_name}[/b]",
-                classes="menu-title text-accent",
-            )
-            yield Static(
-                "[b]s[/b] Start   [b]p[/b] Stop   [b]l[/b] Logs   [b]e[/b] Shell   [b]/[/b] Filter   [b]Esc[/b] Close",
-                classes="menu-keys text-subtle",
-            )
-            with VerticalScroll(id="log-scroll", classes="hidden log-container"):
-                yield Static("", id="log-output", classes="log-text")
+        with TabbedContent():
+            with TabPane("Logs", id="Logs"):
+                with VerticalScroll(id="log-scroll", classes="log-container"):
+                    yield Static("", id="log-output", classes="log-text")
+                yield Input(
+                    placeholder="🔍 Filter logs...",
+                    id="log-filter",
+                    classes="menu-input hidden"
+                )
 
-            yield Input(
-                placeholder="🔍 Filter logs...", id="log-filter", classes="hidden"
-            )
+            with TabPane("Terminal", id="Terminal"):
+                with VerticalScroll(id="shell-scroll", classes="shell-container"):
+                    yield Static("", id="shell-output", classes="shell-text")
+                yield Input(
+                    placeholder="💻 Type shell command...",
+                    id="shell-input",
+                    classes="menu-input"
+                )
+
+        yield Footer()
 
     def on_mount(self):
         self.set_focus(None)
+        self.keep_streaming = True
+        self.set_interval(0.5, self.update_logs, name="log_ui")
+        self.run_worker(self.stream_logs, group="logs", thread=True)
 
-    def action_focus_filter(self):
-        input_box = self.query_one("#log-filter", Input)
-        input_box.remove_class("hidden")
-        self.set_focus(input_box)
+    def on_key(self, event: Key) -> None:
+        shell_input = self.query_one("#shell-input", Input)
+        if shell_input.has_focus:
+            if event.key == "up":
+                if self.command_history and self.history_index > 0:
+                    self.history_index -= 1
+                    shell_input.value = self.command_history[self.history_index]
+            elif event.key == "down":
+                if self.command_history and self.history_index < len(self.command_history) - 1:
+                    self.history_index += 1
+                    shell_input.value = self.command_history[self.history_index]
+                else:
+                    self.history_index = len(self.command_history)
+                    shell_input.value = ""
 
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        self.filter_text = event.value.strip().lower()
-        event.input.add_class("hidden")
-        self.set_focus(None)
-        self.refresh_logs()
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "log-filter":
+            self.filter_text = event.value.strip().lower()
+            event.input.add_class("hidden")
+            self.set_focus(None)
+            self.refresh_logs()
+
+        elif event.input.id == "shell-input":
+            command = event.value.strip()
+            event.input.value = ""
+            if command:
+                self.command_history.append(command)
+                self.history_index = len(self.command_history)
+                if self.shell_writer:
+                    self.shell_writer.write((command + "\n").encode())
+                    await self.shell_writer.drain()
 
     def action_handle_escape(self):
-        input_box = self.query_one("#log-filter", Input)
-        if input_box.has_focus:
-            input_box.add_class("hidden")
+        filter_input = self.query_one("#log-filter", Input)
+        if filter_input.has_focus:
+            filter_input.add_class("hidden")
             self.set_focus(None)
         else:
             self.action_pop_screen()
 
-    def action_show_logs(self):
-        log_scroll = self.query_one("#log-scroll", VerticalScroll)
+    def action_focus_filter(self):
+        self.query_one("#log-filter", Input).remove_class("hidden")
+        self.set_focus(self.query_one("#log-filter", Input))
 
-        if self.logs_visible:
-            log_scroll.add_class("hidden")
-            self.logs_visible = False
-            self.keep_streaming = False
-        else:
-            log_scroll.remove_class("hidden")
-            self.logs_visible = True
-            self.keep_streaming = True
-            self.set_interval(0.5, self.update_logs, name="log_ui")
-            self.run_worker(self.stream_logs, group="logs", thread=True)
+    def action_clear_shell(self):
+        self.shell_lines.clear()
+        self.query_one("#shell-output", Static).update("")
 
     def update_logs(self):
         self.refresh_logs()
 
     def refresh_logs(self):
         log_output = self.query_one("#log-output", Static)
-        filtered = []
-        for line in self.log_lines[-200:]:
-            if self.filter_text and self.filter_text not in line.lower():
-                continue
-            filtered.append(self.colorize_log(line))
+        filtered = [
+            self.colorize_log(line)
+            for line in self.log_lines[-200:]
+            if not self.filter_text or self.filter_text in line.lower()
+        ]
         log_output.update("\n".join(filtered))
-        scroll = self.query_one("#log-scroll", VerticalScroll)
-        scroll.scroll_end(animate=False)
+        self.query_one("#log-scroll", VerticalScroll).scroll_end(animate=False)
 
     def stream_logs(self):
         for line in stream_logs(
@@ -109,13 +141,57 @@ class ContainerActionScreen(Screen):
             if len(self.log_lines) > 1000:
                 self.log_lines.pop(0)
 
+    async def action_open_shell(self):
+        if self.shell_reader and self.shell_reader.at_eof():
+            self.shell_reader = self.shell_writer = None
+
+        if self.shell_reader is None:
+            self.shell_lines.clear()
+            self.query_one("#shell-output", Static).update("")
+            self.shell_reader, self.shell_writer = await open_docker_shell(self.container_id)
+            asyncio.create_task(self.read_shell_output())
+            self.set_focus(self.query_one("#shell-input"))
+
+    async def read_shell_output(self):
+        print("[DEBUG] Starting shell output reader")
+        try:
+            while self.shell_reader:
+                data = await self.shell_reader.read(1024)
+                if not data:
+                    print("[DEBUG] No more data, exiting shell reader")
+                    break
+                self.shell_lines.append(data.decode(errors="ignore"))
+                self.query_one("#shell-output", Static).update(
+                    "".join(self.shell_lines[-200:])
+                )
+                self.query_one("#shell-scroll", VerticalScroll).scroll_end(animate=False)
+        except Exception as e:
+            self.shell_lines.append(f"[red][ERROR] Shell closed: {e}[/red]")
+            print(f"[ERROR] Exception in shell reader: {e}")
+
+
+    async def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
+        if event.tab.id == "Terminal":
+            await self.action_open_shell()
+
     def action_do_action(self, action_name: str):
         self.post_message(self.Selected(action_name, self.container_id))
         self.app.pop_screen()
 
     def action_pop_screen(self) -> None:
         self.keep_streaming = False
+        if self.shell_writer:
+            self.shell_writer.close()
         self.app.pop_screen()
+
+    def action_switch_tab(self, tab: str) -> None:
+        try:
+            self.query_one(TabbedContent).active = tab
+            if tab == "Terminal":
+                self.call_after_refresh(self.action_open_shell)  # Ensure shell starts
+        except Exception:
+            self.app.bell()
+
 
     def colorize_log(self, line: str) -> str:
         upper = line.upper()

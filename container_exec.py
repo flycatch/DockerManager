@@ -1,48 +1,85 @@
-# container_exec.py
-
+import asyncio
 import json
 import requests_unixsocket
-from typing import Generator
+from urllib.parse import quote_plus
 
-DOCKER_SOCKET_URL = "http+unix://%2Fvar%2Frun%2Fdocker.sock"
-session = requests_unixsocket.Session()
+DOCKER_SOCKET_PATH = "/var/run/docker.sock"
 
-
-def run_exec_shell(container_id: str) -> Generator[str, None, None]:
-    # Step 1: Create exec instance
-    create_url = f"{DOCKER_SOCKET_URL}/containers/{container_id}/exec"
+async def create_exec_instance(container_id: str) -> str:
+    print(f"[DEBUG] Creating exec instance for container: {container_id}")
+    session = requests_unixsocket.Session()
+    url = f"http+unix://{quote_plus(DOCKER_SOCKET_PATH)}/containers/{container_id}/exec"
     exec_config = {
-        "AttachStdin": False,
+        "AttachStdin": True,
         "AttachStdout": True,
         "AttachStderr": True,
-        "Tty": True,
-        "Cmd": ["/bin/sh"],
+        "Tty": True,  # Enable TTY for interactive shell
+        "Cmd": ["/bin/sh"]
     }
-    create_resp = session.post(create_url, json=exec_config)
-    if create_resp.status_code != 201:
-        yield f"[ERROR] Failed to create exec: {create_resp.text}"
-        return
+    print(f"[DEBUG] Exec config: {exec_config}")
+    print(f"[DEBUG] POST {url}")
+    resp = session.post(url, json=exec_config)
+    print(f"[DEBUG] Response status: {resp.status_code}")
+    resp.raise_for_status()
+    exec_id = resp.json()["Id"]
+    print(f"[DEBUG] Exec instance ID: {exec_id}")
+    return exec_id
 
-    exec_id = create_resp.json()["Id"]
+async def open_docker_shell(container_id: str):
+    print(f"[DEBUG] Opening docker shell for container: {container_id}")
+    exec_id = await create_exec_instance(container_id)
+    print(f"[DEBUG] Connecting to Docker socket: {DOCKER_SOCKET_PATH}")
+    reader, writer = await asyncio.open_unix_connection(DOCKER_SOCKET_PATH)
 
-    # Step 2: Start exec
-    start_url = f"{DOCKER_SOCKET_URL}/exec/{exec_id}/start"
-    start_config = {
-        "Detach": False,
-        "Tty": True,
-        "AttachStdin": False
-    }
-    headers = {"Content-Type": "application/json"}
-    start_resp = session.post(start_url, headers=headers, data=json.dumps(start_config), stream=True)
+    payload = json.dumps({"Detach": False, "Tty": True})
+    request = (
+        f"POST /v1.41/exec/{exec_id}/start HTTP/1.1\r\n"
+        f"Host: localhost\r\n"
+        f"Content-Type: application/json\r\n"
+        f"Content-Length: {len(payload)}\r\n"
+        f"\r\n"
+        f"{payload}"
+    )
+    print(f"[DEBUG] Sending request to start exec instance:\n{request}")
+    writer.write(request.encode())
+    await writer.drain()
 
-    if start_resp.status_code != 200:
-        yield f"[ERROR] Exec start failed: {start_resp.text}"
-        return
+    # Read and skip HTTP response headers
+    response_headers = b""
+    while True:
+        line = await reader.readline()
+        if line in (b'\r\n', b''):
+            break
+        response_headers += line
+    print(f"[DEBUG] Skipped response headers:\n{response_headers.decode(errors='ignore')}")
 
-    try:
-        for chunk in start_resp.iter_lines(decode_unicode=True):
-            if chunk:
-                print("🧪 chunk:", chunk)
-                yield chunk
-    except Exception as e:
-        yield f"[ERROR] Exception: {e}"
+    print(f"[DEBUG] Shell session ready (reader, writer returned)")
+
+    # Wrap reader/writer to add debug logs for data read/write
+    class DebugStreamReader:
+        def __init__(self, reader):
+            self._reader = reader
+        async def read(self, n=-1):
+            data = await self._reader.read(n)
+            print(f"[DEBUG] [READ] {len(data)} bytes: {data!r}")
+            return data
+        async def readline(self):
+            line = await self._reader.readline()
+            print(f"[DEBUG] [READLINE] {line!r}")
+            return line
+        def at_eof(self):
+            return self._reader.at_eof()
+
+    class DebugStreamWriter:
+        def __init__(self, writer):
+            self._writer = writer
+        def write(self, data):
+            print(f"[DEBUG] [WRITE] {len(data)} bytes: {data!r}")
+            return self._writer.write(data)
+        async def drain(self):
+            await self._writer.drain()
+        def close(self):
+            print(f"[DEBUG] [CLOSE] Writer closed")
+            self._writer.close()
+
+    return DebugStreamReader(reader), DebugStreamWriter(writer)

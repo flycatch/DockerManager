@@ -21,18 +21,16 @@
 
 .container-card {
   padding: 0 1;
-  border: solid #585b70; /* Always apply full border */
+  border: solid #585b70;
   layout: grid;
   grid-size: 3;
   grid-columns: 2fr 2fr 3fr;
   background: #313244;
 }
 
-
-
 /* 🟡 Focused Container */
 .container-card:focus {
-  border: solid #d6ed64; /* Just change the color, layout remains the same */
+  border: solid #d6ed64;
   background: #2f3038;
   color: #d6ed64;
 }
@@ -69,7 +67,6 @@ Screen {
   background: #1e1e2e 95%;
   padding: 1;
 }
-
 
 /* 💬 Modal Card */
 .modal-card {
@@ -135,3 +132,90 @@ ScrollView#logs {
   border: round #89b4fa;
   margin: 1 0;
 }
+
+/* 🖥️ Shell Container */
+.shell-container {
+  height: 1fr;
+  overflow: auto;
+  background: #000000;
+  border: round #5e81ac;
+  margin: 1 0;
+  padding: 1;
+}
+
+/* 📤 Shell Output Text */
+#shell-output.shell-text {
+  padding: 1;
+  color: #ffffff;
+  background: #000000;
+  text-wrap: wrap;
+  text-style: bold;
+  scrollbar-gutter: stable;
+  scrollbar-color: #585b70 #1e1e2e;
+  width: 100%;
+}
+
+/* 💻 Shell Input Field */
+#shell-input.menu-input {
+  background: #1e1e1e;
+  border: round #5e81ac;
+  color: #ffffff;
+  text-style: bold;
+  padding: 0 1;
+  margin: 1 0;
+}
+
+/* 🧠 Command History Hover/Focus */
+#shell-input:focus {
+  border: round #d6ed64;
+  background: #2f3038;
+  color: #d6ed64;
+}
+
+/* ⌨️ Input Prompt Styling */
+.shell-input-prompt {
+  color: #94e2d5;
+  text-style: italic;
+  padding: 0 1;
+}
+
+/* 🧾 Error Lines in Shell Output */
+.shell-text .error {
+  color: #f38ba8;
+  text-style: bold;
+}
+
+/* ⚠️ Warning Lines in Shell Output */
+.shell-text .warning {
+  color: #f9e2af;
+  text-style: italic;
+}
+
+/* ✅ Info Lines in Shell Output */
+.shell-text .info {
+  color: #a6e3a1;
+}
+
+/* 🔄 Command Echo */
+.shell-text .echo {
+  color: #89dceb;
+  text-style: bold;
+}
+
+/* 🔁 Scroll Container Shared Behavior */
+VerticalScroll#shell-scroll {
+  scrollbar-gutter: stable;
+  scrollbar-color: #585b70 #1e1e2e;
+}
+
+
+#confirm-box {
+  width: 60%;
+  height: auto;
+  padding: 2;
+  border: round white;
+  background: #1e1e2e;
+  align: center middle;
+  content-align: center middle;
+}
+

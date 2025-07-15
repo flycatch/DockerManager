@@ -2,7 +2,7 @@ from textual.app import App, ComposeResult
 from textual.widgets import Footer, Static
 from textual.containers import Vertical
 from bindings import APP_BINDINGS
-from service import get_containers, start_container, stop_container
+from service import delete_container, get_containers, start_container, stop_container
 from typing import Dict
 from container_shell import run_exec_shell
 from container_action_menu import ContainerActionScreen
@@ -71,6 +71,11 @@ class DockerManager(App):
                 card = ContainerCard(idx,container_id, name, image, status)
                 self.cards[container_id] = card
                 self.container_list.mount(card)
+        
+        for container_id in list(self.cards.keys()):
+            if container_id not in seen_ids:
+                card = self.cards.pop(container_id)
+                card.remove()
 
     def action_focus_next(self):
         self.screen.focus_next()
@@ -94,6 +99,13 @@ class DockerManager(App):
             if success:
                 self.action_run_ls()
 
+    def action_delete_selected(self):
+        focused = self.screen.focused
+        if isinstance(focused, ContainerCard):
+            success = delete_container(focused.container_id)
+            if success:
+                self.action_run_ls()
+                
     def action_exec_selected(self) -> None:
         focused = self.screen.focused
         if isinstance(focused, ContainerCard):
@@ -114,6 +126,8 @@ class DockerManager(App):
             start_container(cid)
         elif action == "stop":
             stop_container(cid)
+        elif action == "delete":
+            delete_container(cid)
         elif action == "logs":
             self.push_screen(ContainerActionScreen(cid, ''))
         elif action == "exec":
