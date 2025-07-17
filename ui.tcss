@@ -255,12 +255,3 @@ ScrollView#logs {
   color: $accent;
 }
 
-.tree--expanded::before {
-  content: "▾ ";
-  color: $muted;
-}
-
-.tree--collapsed::before {
-  content: "▸ ";
-  color: $muted;
-}
