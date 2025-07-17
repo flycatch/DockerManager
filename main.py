@@ -1,9 +1,6 @@
 from textual.app import App, ComposeResult
 from textual.widgets import Footer, Static, Tree, TabPane, TabbedContent
 from textual.containers import Vertical, Horizontal
-from textual.reactive import var
-from textual.message import Message
-from textual.widgets._tree import TreeNode, NodeID
 from rich.text import Text
 from bindings import APP_BINDINGS
 from service import delete_container, get_projects_with_containers, start_container, stop_container
