@@ -21,7 +21,7 @@
 
 .container-card {
   padding: 0 1;
-  border: solid #585b70;
+  border: round #585b70;
   layout: grid;
   grid-size: 3;
   grid-columns: 2fr 2fr 3fr;
@@ -30,7 +30,7 @@
 
 /* 🟡 Focused Container */
 .container-card:focus {
-  border: solid #d6ed64;
+  border: round #d6ed64;
   background: #2f3038;
   color: #d6ed64;
 }
@@ -202,20 +202,65 @@ ScrollView#logs {
   text-style: bold;
 }
 
-/* 🔁 Scroll Container Shared Behavior */
-VerticalScroll#shell-scroll {
+/* Project Tree */
+#project-tree {
+  padding: 1 2;
+  border: round $accent;
+  width: 30%;
+  height: 100%;
+  background: $boost;       
+  color: $text;            
   scrollbar-gutter: stable;
-  scrollbar-color: #585b70 #1e1e2e;
+}
+
+/* Container List */
+#container-list {
+  padding: 1 2;
+  overflow: auto;
+  height: 100%;
+  border: round $surface;
+  background: $panel;
+  scrollbar-gutter: stable;
 }
 
 
-#confirm-box {
-  width: 60%;
-  height: auto;
-  padding: 2;
-  border: round white;
-  background: #1e1e2e;
-  align: center middle;
-  content-align: center middle;
+
+#project-tree {
+  border: round $accent;
+  padding: 1 2;
+  margin: 1;
+  background: $boost;
+  height: 1fr;
+  overflow: auto;
+  scrollbar-gutter: stable;
 }
 
+.tree--guides {
+  color: $primary;
+}
+
+.tree--label {
+  padding-left: 1;
+  color: $text;
+}
+
+.tree--cursor {
+  color: $accent-lighten-2;
+  background: $accent-darken-3;
+  text-style: bold;
+}
+
+.tree--label:focus {
+  background: $surface-darken-1;
+  color: $accent;
+}
+
+.tree--expanded::before {
+  content: "▾ ";
+  color: $muted;
+}
+
+.tree--collapsed::before {
+  content: "▸ ";
+  color: $muted;
+}
