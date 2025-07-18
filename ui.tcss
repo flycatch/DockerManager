@@ -154,6 +154,14 @@ ScrollView#logs {
   scrollbar-color: #585b70 #1e1e2e;
   width: 100%;
 }
+.shell-text {
+  text-style: bold dim;
+  height: auto;
+  padding: 1 2;
+  background: $surface;
+  color: $text;
+}
+
 
 /* 💻 Shell Input Field */
 #shell-input.menu-input {

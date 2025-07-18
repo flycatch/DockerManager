@@ -13,7 +13,7 @@ async def create_exec_instance(container_id: str) -> str:
         "AttachStdin": True,
         "AttachStdout": True,
         "AttachStderr": True,
-        "Tty": True,  # Enable TTY for interactive shell
+        "Tty": False,  
         "Cmd": ["/bin/sh"]
     }
     print(f"[DEBUG] Exec config: {exec_config}")

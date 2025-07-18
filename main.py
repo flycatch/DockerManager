@@ -5,7 +5,7 @@ from rich.text import Text
 from bindings import APP_BINDINGS
 from service import delete_container, get_projects_with_containers, start_container, stop_container
 from typing import Dict, Any
-from container_shell import run_exec_shell
+# from container_shell import run_exec_shell
 from container_action_menu import ContainerActionScreen
 
 
@@ -168,10 +168,10 @@ class DockerManager(App):
             if delete_container(focused.container_id):
                 self.call_from_thread(self.refresh_projects)
 
-    def action_exec_selected(self):
-        focused = self.screen.focused
-        if isinstance(focused, ContainerCard):
-            run_exec_shell(focused.container_id)
+    # def action_exec_selected(self):
+    #     focused = self.screen.focused
+    #     if isinstance(focused, ContainerCard):
+    #         run_exec_shell(focused.container_id)
 
     def action_open_menu(self):
         focused = self.screen.focused
@@ -190,8 +190,8 @@ class DockerManager(App):
             delete_container(cid)
         elif action == "logs":
             self.push_screen(ContainerActionScreen(cid, ''))
-        elif action == "exec":
-            run_exec_shell(cid)
+        # elif action == "exec":
+        #     run_exec_shell(cid)
 
         self.call_from_thread(self.refresh_projects)
 

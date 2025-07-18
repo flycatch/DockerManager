@@ -9,6 +9,12 @@ import asyncio
 from container_logs import stream_logs
 from container_exec import open_docker_shell
 
+import re
+
+VT100_ESCAPE_PATTERN = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+
+def strip_vt100(text: str) -> str:
+    return VT100_ESCAPE_PATTERN.sub('', text)
 
 class ContainerActionScreen(Screen):
     BINDINGS = [
@@ -94,12 +100,28 @@ class ContainerActionScreen(Screen):
         elif event.input.id == "shell-input":
             command = event.value.strip()
             event.input.value = ""
+
             if command:
                 self.command_history.append(command)
                 self.history_index = len(self.command_history)
-                if self.shell_writer:
-                    self.shell_writer.write((command + "\n").encode())
-                    await self.shell_writer.drain()
+
+                # Handle `clear` command manually
+                if command == "clear":
+                    self.shell_lines.clear()
+                    self.query_one("#shell-output", Static).update("")
+                else:
+                    self.shell_lines.append(f"/ # {command}\n")
+
+                    if self.shell_writer:
+                        self.shell_writer.write((command + "\n").encode())
+                        await self.shell_writer.drain()
+
+                # Always refresh the view
+                self.query_one("#shell-output", Static).update(
+                    "".join(self.shell_lines[-200:])
+                )
+                self.query_one("#shell-scroll", VerticalScroll).scroll_end(animate=False)
+
 
     def action_handle_escape(self):
         filter_input = self.query_one("#log-filter", Input)
@@ -160,7 +182,12 @@ class ContainerActionScreen(Screen):
                 if not data:
                     print("[DEBUG] No more data, exiting shell reader")
                     break
-                self.shell_lines.append(data.decode(errors="ignore"))
+
+                # Decode and clean VT100 sequences
+                decoded = data.decode(errors="ignore")
+                clean_output = strip_vt100(decoded)
+
+                self.shell_lines.append(clean_output)
                 self.query_one("#shell-output", Static).update(
                     "".join(self.shell_lines[-200:])
                 )
@@ -168,6 +195,7 @@ class ContainerActionScreen(Screen):
         except Exception as e:
             self.shell_lines.append(f"[red][ERROR] Shell closed: {e}[/red]")
             print(f"[ERROR] Exception in shell reader: {e}")
+
 
 
     async def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
