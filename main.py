@@ -5,7 +5,6 @@ from rich.text import Text
 from bindings import APP_BINDINGS
 from service import delete_container, get_projects_with_containers, start_container, stop_container
 from typing import Dict, Any
-# from container_shell import run_exec_shell
 from container_action_menu import ContainerActionScreen
 
 
@@ -56,9 +55,11 @@ class DockerManager(App):
                 yield self.uncategorized_list
 
             with TabPane("🧩 Compose Projects", id="tab-projects"):
-                self.project_tree = Tree("Compose Projects", id="project-tree")
-                self.container_list = Vertical(id="container-list")
-                yield Horizontal(self.project_tree, self.container_list)
+                with Horizontal(id="projects-layout"):
+                    self.project_tree = Tree("Compose Projects", id="project-tree")
+                    self.container_list = Vertical(id="container-list")
+                    yield self.project_tree
+                    yield self.container_list
 
         yield Footer()
 
@@ -89,7 +90,8 @@ class DockerManager(App):
             self.project_tree.root.remove_children()
             for project, containers in all_projects.items():
                 if project != "Uncategorized":
-                    self.project_tree.root.add(project, data=containers)
+                    icon = "🧩"
+                    self.project_tree.root.add(f"{icon} {project}", data=containers)
 
             self.project_tree.root.expand()
 
@@ -154,31 +156,26 @@ class DockerManager(App):
         focused = self.screen.focused
         if isinstance(focused, ContainerCard):
             if start_container(focused.container_id):
-                self.call_from_thread(self.refresh_projects)
+                self.run_worker(self.refresh_projects, exclusive=True, group="refresh")
 
     def action_stop_selected(self):
         focused = self.screen.focused
         if isinstance(focused, ContainerCard):
             if stop_container(focused.container_id):
-                self.call_from_thread(self.refresh_projects)
+                self.run_worker(self.refresh_projects, exclusive=True, group="refresh")
 
     def action_delete_selected(self):
         focused = self.screen.focused
         if isinstance(focused, ContainerCard):
             if delete_container(focused.container_id):
-                self.call_from_thread(self.refresh_projects)
-
-    # def action_exec_selected(self):
-    #     focused = self.screen.focused
-    #     if isinstance(focused, ContainerCard):
-    #         run_exec_shell(focused.container_id)
+                self.run_worker(self.refresh_projects, exclusive=True, group="refresh")
 
     def action_open_menu(self):
         focused = self.screen.focused
         if isinstance(focused, ContainerCard):
             self.push_screen(ContainerActionScreen(focused.container_id, focused.container_name))
 
-    def on_container_action_screen_selected(self, message: ContainerActionScreen.Selected):
+    async def on_container_action_screen_selected(self, message: ContainerActionScreen.Selected):
         cid = message.container_id
         action = message.action
 
@@ -189,11 +186,9 @@ class DockerManager(App):
         elif action == "delete":
             delete_container(cid)
         elif action == "logs":
-            self.push_screen(ContainerActionScreen(cid, ''))
-        # elif action == "exec":
-        #     run_exec_shell(cid)
+            self.push_screen(ContainerActionScreen(cid, ""))
 
-        self.call_from_thread(self.refresh_projects)
+        await self.refresh_projects()
 
 
 if __name__ == "__main__":

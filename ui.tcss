@@ -26,6 +26,7 @@
   grid-size: 3;
   grid-columns: 2fr 2fr 3fr;
   background: #313244;
+  margin-bottom: 1;
 }
 
 /* 🟡 Focused Container */
@@ -162,7 +163,6 @@ ScrollView#logs {
   color: $text;
 }
 
-
 /* 💻 Shell Input Field */
 #shell-input.menu-input {
   background: #1e1e1e;
@@ -210,56 +210,40 @@ ScrollView#logs {
   text-style: bold;
 }
 
-/* Project Tree */
-#project-tree {
-  padding: 1 2;
-  border: round $accent;
-  width: 30%;
-  height: 100%;
-  background: $boost;       
-  color: $text;            
-  scrollbar-gutter: stable;
+/* 🧩 Compose Projects Layout */
+#projects-layout {
+  layout: horizontal;
+  border: round #585b70;
+  background: #1e1e2e;
+  height: 1fr;
 }
 
-/* Container List */
-#container-list {
-  padding: 1 2;
-  overflow: auto;
-  height: 100%;
-  border: round $surface;
-  background: $panel;
-  scrollbar-gutter: stable;
-}
-
-
-
+/* 🌳 Compose Project Tree */
 #project-tree {
-  border: round $accent;
+  border: round #89b4fa;
   padding: 1 2;
-  margin: 1;
-  background: $boost;
+  margin: 1 0;
+  background: #1e1e2e;
   height: 1fr;
   overflow: auto;
+  color: #cdd6f4;
   scrollbar-gutter: stable;
-}
-
-.tree--guides {
-  color: $primary;
 }
 
 .tree--label {
-  padding-left: 1;
-  color: $text;
-}
-
-.tree--cursor {
-  color: $accent-lighten-2;
-  background: $accent-darken-3;
+  padding-left: 2;
+  color: #cdd6f4;
   text-style: bold;
 }
 
-.tree--label:focus {
-  background: $surface-darken-1;
-  color: $accent;
+.tree--cursor {
+  background: #313244;
+  color: #f9e2af;
+  text-style: bold reverse;
 }
+
+.tree--guides {
+  color: #7f849c;
+}
+
 
