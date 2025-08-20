@@ -105,22 +105,20 @@ class ContainerActionScreen(Screen):
                 self.command_history.append(command)
                 self.history_index = len(self.command_history)
 
-                # Handle `clear` command manually
+                # Handle `clear` manually
                 if command == "clear":
                     self.shell_lines.clear()
                     self.query_one("#shell-output", Static).update("")
                 else:
-                    self.shell_lines.append(f"/ # {command}\n")
-
                     if self.shell_writer:
                         self.shell_writer.write((command + "\n").encode())
                         await self.shell_writer.drain()
 
-                # Always refresh the view
-                self.query_one("#shell-output", Static).update(
-                    "".join(self.shell_lines[-200:])
-                )
-                self.query_one("#shell-scroll", VerticalScroll).scroll_end(animate=False)
+            # Always refresh the view
+            self.query_one("#shell-output", Static).update(
+                "".join(self.shell_lines[-1000:])
+            )
+            self.query_one("#shell-scroll", VerticalScroll).scroll_end(animate=False)
 
 
     def action_handle_escape(self):
@@ -143,14 +141,23 @@ class ContainerActionScreen(Screen):
         self.refresh_logs()
 
     def refresh_logs(self):
+        scroll_view = self.query_one("#log-scroll", VerticalScroll)
         log_output = self.query_one("#log-output", Static)
+
+        # Check if user is already at bottom
+        at_bottom = scroll_view.scroll_y + scroll_view.size.height >= scroll_view.virtual_size.height - 1
+
         filtered = [
             self.colorize_log(line)
             for line in self.log_lines[-200:]
             if not self.filter_text or self.filter_text in line.lower()
         ]
         log_output.update("\n".join(filtered))
-        self.query_one("#log-scroll", VerticalScroll).scroll_end(animate=False)
+
+        # Only auto-scroll if already at bottom
+        if at_bottom:
+            scroll_view.scroll_end(animate=False)
+
 
     def stream_logs(self):
         for line in stream_logs(
@@ -181,26 +188,40 @@ class ContainerActionScreen(Screen):
                 data = await self.shell_reader.read(1024)
                 if not data:
                     print("[DEBUG] No more data, exiting shell reader")
+                    self.shell_lines.append("[red][DISCONNECTED] Shell session ended.[/red]\n")
+                    self.query_one("#shell-output", Static).update(
+                        "".join(self.shell_lines[-1000:])
+                    )
                     break
 
-                # Decode and clean VT100 sequences
                 decoded = data.decode(errors="ignore")
                 clean_output = strip_vt100(decoded)
 
                 self.shell_lines.append(clean_output)
-                self.query_one("#shell-output", Static).update(
-                    "".join(self.shell_lines[-200:])
-                )
-                self.query_one("#shell-scroll", VerticalScroll).scroll_end(animate=False)
+                scroll_view = self.query_one("#shell-scroll", VerticalScroll)
+                output_widget = self.query_one("#shell-output", Static)
+
+                at_bottom = scroll_view.scroll_y + scroll_view.size.height >= scroll_view.virtual_size.height - 1
+
+                output_widget.update("".join(self.shell_lines[-1000:]))
+
+                if at_bottom:
+                    scroll_view.scroll_end(animate=False)
+
         except Exception as e:
-            self.shell_lines.append(f"[red][ERROR] Shell closed: {e}[/red]")
+            self.shell_lines.append(f"[red][ERROR] Shell closed: {e}[/red]\n")
             print(f"[ERROR] Exception in shell reader: {e}")
+            self.query_one("#shell-output", Static).update(
+                "".join(self.shell_lines[-1000:])
+            )
+
 
 
 
     async def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
         if event.tab.id == "Terminal":
             await self.action_open_shell()
+            self.set_focus(self.query_one("#shell-input"))
 
     def action_do_action(self, action_name: str):
         self.post_message(self.Selected(action_name, self.container_id))

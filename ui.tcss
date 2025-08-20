@@ -1,17 +1,6 @@
-/* 🌙 Header Title */
-.header-title {
-  content-align: center middle;
-  color: #d6ed64;
-  background: #313244;
-  padding: 0 1;
-  text-style: bold;
-  border-bottom: solid #b4befe;
-  margin: 1 0;
-}
 
 /* 📦 Container List */
 #container-list {
-  padding: 1;
   margin: 1 0;
   height: 1fr;
   overflow: auto;
@@ -20,26 +9,25 @@
 }
 
 .container-card {
-  padding: 0 1;
-  border: round #585b70;
+  padding: 0;
+  border: none;
   layout: grid;
   grid-size: 3;
-  grid-columns: 2fr 2fr 3fr;
-  background: #313244;
-  margin-bottom: 1;
+  grid-columns: 2fr 3fr 2fr;
+  # background: #313244;
+  margin-bottom: 0;
 }
 
 /* 🟡 Focused Container */
 .container-card:focus {
-  border: round #d6ed64;
   background: #2f3038;
-  color: #d6ed64;
 }
+
 
 /* 🟣 Hovered Container */
 .container-card:hover {
+  padding: 0;
   background: #45475a;
-  outline: solid #7f849c;
 }
 
 /* 🔤 Column Styling */
@@ -47,17 +35,19 @@
   padding: 0;
   content-align: left middle;
 }
-
 .col.name {
+  padding:0;
   text-style: bold;
   color: #94e2d5;
 }
 
 .col.image {
+  padding: 0;
   color: #a6e3a1;
 }
 
 .col.status {
+  padding: 0;
   color: #f9e2af;
 }
 
@@ -66,13 +56,13 @@ Screen {
   align: center middle;
   content-align: center middle;
   background: #1e1e2e 95%;
-  padding: 1;
+  padding: 0;
 }
 
 /* 💬 Modal Card */
 .modal-card {
   layout: vertical;
-  padding: 1 2;
+  padding: 01 2;
   width: 100%;
   max-width: 100%;
   border: round #d6ed64;
@@ -95,7 +85,7 @@ Screen {
   color: #a6adc8;
   text-style: italic;
   content-align: center middle;
-  padding: 1 0 0 0;
+  padding: 0 0 0 0;
 }
 
 /* 🔍 Input Field Base */
@@ -210,6 +200,9 @@ ScrollView#logs {
   text-style: bold;
 }
 
+
+
+
 /* 🧩 Compose Projects Layout */
 #projects-layout {
   layout: horizontal;
@@ -226,6 +219,7 @@ ScrollView#logs {
   background: #1e1e2e;
   height: 1fr;
   overflow: auto;
+  width: 50;
   color: #cdd6f4;
   scrollbar-gutter: stable;
 }
@@ -245,5 +239,3 @@ ScrollView#logs {
 .tree--guides {
   color: #7f849c;
 }
-
-

@@ -5,16 +5,17 @@ from textual.widgets import Static, TabbedContent, TabPane, Tree, Footer
 from textual.containers import Vertical, Horizontal
 from rich.text import Text
 from cards.container_card import ContainerCard
+from container_action_menu import ContainerActionScreen
 from service import (
     get_projects_with_containers,
     start_container,
     stop_container,
     delete_container
 )
-from container_action_menu import ContainerActionScreen
+
 
 class DockerManager(App):
-    CSS_PATH = "ui.tcss"
+    CSS_PATH = "../ui.tcss"
     BINDINGS = APP_BINDINGS
     ENABLE_COMMAND_PALETTE = False
 
@@ -27,16 +28,15 @@ class DockerManager(App):
         self.current_project: str | None = None
 
     def compose(self) -> ComposeResult:
-        yield Static("🛠 Docker Manager", classes="header-title")
 
         with TabbedContent():
-            with TabPane("🧊 All Containers", id="tab-uncategorized"):
+            with TabPane("🟡 All Containers", id="tab-uncategorized"):
                 self.uncategorized_list = Vertical(id="uncategorized-list")
                 yield self.uncategorized_list
 
-            with TabPane("🧩 Compose Projects", id="tab-projects"):
+            with TabPane("🟢 Compose Projects", id="tab-projects"):
                 with Horizontal(id="projects-layout"):
-                    self.project_tree = Tree("Compose Projects", id="project-tree")
+                    self.project_tree = Tree("🔹Compose Projects", id="project-tree")
                     self.container_list = Vertical(id="container-list")
                     yield self.project_tree
                     yield self.container_list
@@ -68,10 +68,12 @@ class DockerManager(App):
 
             # Update Compose Project Tree
             self.project_tree.root.remove_children()
+            self.project_tree.root.allow_expand = False
             for project, containers in all_projects.items():
                 if project != "Uncategorized":
-                    icon = "🧩"
-                    self.project_tree.root.add(f"{icon} {project}", data=containers)
+                    icon = "🔹"
+                    node = self.project_tree.root.add(f"{icon} {project}", data=containers)
+                    node.allow_expand = False
 
             self.project_tree.root.expand()
 
@@ -169,4 +171,3 @@ class DockerManager(App):
             self.push_screen(ContainerActionScreen(cid, ""))
 
         await self.refresh_projects()
-

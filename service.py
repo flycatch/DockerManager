@@ -41,3 +41,5 @@ def stop_container(container_id: str) -> bool:
 def delete_container(container_id: str) -> bool:
     response = session.delete(f"{DOCKER_SOCKET_URL}/containers/{container_id}")
     return response.status_code == 204
+
+
