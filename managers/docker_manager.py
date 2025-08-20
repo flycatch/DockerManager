@@ -30,6 +30,8 @@ class DockerManager(App):
         self.projects: dict[str, list[tuple[int, str, str, str, str]]] = {}
         self._refreshing = False
         self.current_project: str | None = None
+        self._last_focused_id: str | None = None  # Add this line
+        self._last_containers: dict[str, tuple[str, str, str, str]] = {}  # NEW: snapshot {id: (name, image, status)}
 
     def compose(self) -> ComposeResult:
 
@@ -63,6 +65,29 @@ class DockerManager(App):
         try:
             all_projects = get_projects_with_containers()
 
+            # Flatten into a {cid: (name, image, status)} dict for comparison
+            new_snapshot = {}
+            for project, containers in all_projects.items():
+                for _, cid, name, image, status in containers:
+                    new_snapshot[cid] = (name, image, status)
+
+            # --- CASE 1: Only statuses changed ---
+            if (
+                set(new_snapshot.keys()) == set(self._last_containers.keys())
+                and all(new_snapshot[cid][0:2] == self._last_containers[cid][0:2] 
+                        for cid in new_snapshot)
+            ):
+                # Just update statuses (faster, no UI rebuild)
+                for cid, (name, image, status) in new_snapshot.items():
+                    card = self.get_container_card_by_id(cid)
+                    if card:
+                        card.update_status(status)
+                self._last_containers = new_snapshot
+                return
+
+            # --- CASE 2: Projects/membership changed → full sync ---
+            self._last_containers = new_snapshot
+
             # Update Uncategorized View
             if "Uncategorized" in all_projects:
                 await self.sync_card_list(
@@ -71,25 +96,27 @@ class DockerManager(App):
                     self.uncategorized_list
                 )
 
-            # Update Compose Project Tree
+            # Rebuild Compose Project Tree
             self.project_tree.root.remove_children()
             self.project_tree.root.allow_expand = False
             for project, containers in all_projects.items():
                 if project != "Uncategorized":
-                    icon = "🔹"
-                    node = self.project_tree.root.add(f"{icon} {project}", data=containers)
+                    node = self.project_tree.root.add(f"🔹 {project}", data=containers)
                     node.allow_expand = False
-
             self.project_tree.root.expand()
 
-            # Update currently selected project containers
-            if self.current_project and self.project_tree.root.children:
-                selected_node = next(
-                    (child for child in self.project_tree.root.children if str(child.label.plain if isinstance(child.label, Text) else child.label) == self.current_project),
-                    None
-                )
-                if selected_node:
-                    await self.refresh_container_list(selected_node.data or [])
+            # Auto-select current/first project
+            if self.current_project:
+                for node in self.project_tree.root.children:
+                    label = node.label.plain if isinstance(node.label, Text) else str(node.label)
+                    if label[1:].strip() == self.current_project:
+                        self.project_tree.select_node(node)
+                        await self.refresh_container_list(node.data or [])
+                        break
+            elif self.project_tree.root.children:
+                first_node = self.project_tree.root.children[0]
+                self.project_tree.select_node(first_node)
+                await self.refresh_container_list(first_node.data or [])
 
         finally:
             self._refreshing = False
@@ -103,6 +130,10 @@ class DockerManager(App):
         container_map: dict[str, ContainerCard],
         mount_target: Vertical
     ):
+        current_focused = self.screen.focused
+        # Add type check before accessing container_id
+        focused_id = getattr(current_focused, 'container_id', None) if (current_focused and isinstance(current_focused, ContainerCard)) else None
+        
         new_ids = {cid for _, cid, *_ in container_data}
         old_ids = set(container_map.keys())
 
@@ -111,14 +142,37 @@ class DockerManager(App):
             card = container_map.pop(cid)
             await card.remove()
 
-        # Add or update cards
+        # Create a mapping of container ID to status for quick lookup
+        status_map = {cid: status for _, cid, _, _, status in container_data}
+
+        # Update existing cards
+        for cid in old_ids & new_ids:
+            if cid in container_map and cid in status_map:
+                container_map[cid].update_status(status_map[cid])
+
+        # Add new cards
         for idx, cid, name, image, status in container_data:
-            if cid in container_map:
-                container_map[cid].update_status(status)
-            else:
+            if cid not in container_map:
                 card = ContainerCard(idx, cid, name, image, status)
                 container_map[cid] = card
                 await mount_target.mount(card)
+
+        # Restore focus if the focused container still exists
+        if focused_id:
+            focused_card = self.get_container_card_by_id(focused_id)
+            if focused_card:
+                self.set_focus(focused_card)
+        elif mount_target.children:
+            # Focus on first container if available and no previous focus
+            self.set_focus(mount_target.children[0])
+
+    def get_container_card_by_id(self, container_id: str) -> ContainerCard | None:
+        """Find a container card by ID in either cards dictionary"""
+        if container_id in self.cards:
+            return self.cards[container_id]
+        if container_id in self.uncategorized_cards:
+            return self.uncategorized_cards[container_id]
+        return None
 
     async def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
         containers: Any = event.node.data
@@ -139,8 +193,11 @@ class DockerManager(App):
     def action_start_selected(self):
         focused = self.screen.focused
         if isinstance(focused, ContainerCard):
-            if start_container(focused.container_id):
+            container_id = focused.container_id
+            if start_container(container_id):
                 self.notify_success(f"Started container: {focused.container_name}")
+                # Store the ID to restore focus after refresh
+                self._last_focused_id = container_id
                 self.run_worker(self.refresh_projects, exclusive=True, group="refresh")
             else:
                 self.notify_error(f"Failed to start container: {focused.container_name}")
@@ -148,8 +205,10 @@ class DockerManager(App):
     def action_stop_selected(self):
         focused = self.screen.focused
         if isinstance(focused, ContainerCard):
-            if stop_container(focused.container_id):
+            container_id = focused.container_id
+            if stop_container(container_id):
                 self.notify_success(f"Stopped container: {focused.container_name}")
+                self._last_focused_id = container_id
                 self.run_worker(self.refresh_projects, exclusive=True, group="refresh")
             else:
                 self.notify_error(f"Failed to stop container: {focused.container_name}")
@@ -157,11 +216,15 @@ class DockerManager(App):
     def action_delete_selected(self):
         focused = self.screen.focused
         if isinstance(focused, ContainerCard):
-            if delete_container(focused.container_id):
-                self.notify_success(f"Deleted container: {focused.container_name}")
+            container_id = focused.container_id
+            container_name = focused.container_name
+            if delete_container(container_id):
+                self.notify_success(f"Deleted container: {container_name}")
+                # Don't try to restore focus for deleted containers
+                self._last_focused_id = None
                 self.run_worker(self.refresh_projects, exclusive=True, group="refresh")
             else:
-                self.notify_error(f"Failed to delete container: {focused.container_name}")
+                self.notify_error(f"Failed to delete container: {container_name}")
 
     def action_open_menu(self):
         focused = self.screen.focused

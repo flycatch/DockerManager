@@ -1,4 +1,5 @@
 
+
 /* 📦 Container List */
 #container-list {
   margin: 1 0;
@@ -49,6 +50,21 @@
 .col.status {
   padding: 0;
   color: #f9e2af;
+}
+
+.status-running {
+    color: $success;
+    text-style: bold;
+}
+
+.status-stopped {
+    color: $error;
+    text-style: italic;
+}
+
+.status-exited {
+    color: $warning;
+    text-style: italic;
 }
 
 /* 🌌 Screen Layout */
