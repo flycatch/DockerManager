@@ -1,28 +1,30 @@
-from textual.screen import Screen
+from textual.screen import ModalScreen
 from textual.widgets import Static, Input, Footer, TabbedContent, TabPane
 from textual.message import Message
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.containers import VerticalScroll
 from textual.events import Key
+from textual.widgets import Footer
+from typing import List
 import asyncio
 
 from container_logs import stream_logs
 from container_exec import open_docker_shell
 
 import re
-
+from rich.text import Text
 VT100_ESCAPE_PATTERN = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
 def strip_vt100(text: str) -> str:
     return VT100_ESCAPE_PATTERN.sub('', text)
 
-class ContainerActionScreen(Screen):
-    BINDINGS = [
+class ContainerActionScreen(ModalScreen):
+    BINDINGS: List[BindingType] = [  # Use BindingType annotation
         Binding("s", "do_action('start')", "Start"),
         Binding("p", "do_action('stop')", "Stop"),
         Binding("d", "do_action('delete')", "Delete"),
-        Binding("l", "switch_tab('Logs')", "Logs Tab"),
-        Binding("t", "switch_tab('Terminal')", "Shell Tab"),
+        Binding("left", "switch_tab('Logs')", "Logs Tab"),
+        Binding("right", "switch_tab('Terminal')", "Shell Tab"),
         Binding("/", "focus_filter", "Filter Logs"),
         Binding("ctrl+l", "clear_shell", "Clear Shell"),
         Binding("escape", "handle_escape", "Close"),
@@ -47,6 +49,7 @@ class ContainerActionScreen(Screen):
         self.command_history: list[str] = []
         self.history_index: int = -1
 
+
     def compose(self):
         with TabbedContent():
             with TabPane("Logs", id="Logs"):
@@ -66,7 +69,6 @@ class ContainerActionScreen(Screen):
                     id="shell-input",
                     classes="menu-input"
                 )
-
         yield Footer()
 
     def on_mount(self):
@@ -231,7 +233,14 @@ class ContainerActionScreen(Screen):
         self.keep_streaming = False
         if self.shell_writer:
             self.shell_writer.close()
+        
+        # Re-enable the parent screen BEFORE popping
+        if len(self.app.screen_stack) > 1:
+            parent_screen = self.app.screen_stack[-2]
+            parent_screen.disabled = False
+        
         self.app.pop_screen()
+
 
     def action_switch_tab(self, tab: str) -> None:
         try:
@@ -243,13 +252,17 @@ class ContainerActionScreen(Screen):
 
 
     def colorize_log(self, line: str) -> str:
-        upper = line.upper()
-        if "ERROR" in upper:
-            return f"[red]{line}[/red]"
+        # Escape any existing square brackets to prevent markup conflicts
+        import re
+        escaped_line = re.sub(r'([\[\]])', r'\\\1', line)
+        
+        upper = escaped_line.upper()
+        if "ERROR" in upper or "FATAL" in upper:
+            return f"[red]{escaped_line}[/red]"
         elif "WARN" in upper:
-            return f"[yellow]{line}[/yellow]"
+            return f"[yellow]{escaped_line}[/yellow]"
         elif "INFO" in upper:
-            return f"[green]{line}[/green]"
+            return f"[green]{escaped_line}[/green]"
         elif "DEBUG" in upper:
-            return f"[blue]{line}[/blue]"
-        return line
+            return f"[blue]{escaped_line}[/blue]"
+        return escaped_line

@@ -1,4 +1,4 @@
-from bindings import APP_BINDINGS
+from textual.binding import Binding
 from typing import Dict, Any
 from textual.app import ComposeResult, App
 from textual.widgets import Static, TabbedContent, TabPane, Tree, Footer
@@ -14,13 +14,20 @@ from service import (
     start_project, stop_project, delete_project, restart_project
 
 )
-import time
-from datetime import datetime, timedelta
 
 
 class DockerManager(App):
     CSS_PATH = "../ui.tcss"
-    BINDINGS = APP_BINDINGS
+    BINDINGS = [
+        ("q", "quit", "Quit"),
+        ("down", "focus_next", "Next Container"),
+        ("up", "focus_previous", "Previous Container"),
+        ("enter", "open_menu", "Container Actions"),
+        ("u", "start_project", "Project Up/Start"),
+        ("o", "stop_project", "Project Down/Stop"),
+        ("r", "restart_project", "Restart Project"),
+        ("x", "delete_project", "Delete Project"),
+    ]
     ENABLE_COMMAND_PALETTE = False
 
     def __init__(self):
@@ -234,7 +241,7 @@ class DockerManager(App):
     async def on_container_action_screen_selected(self, message: ContainerActionScreen.Selected):
         cid = message.container_id
         action = message.action
-        
+        self.disabled = False
         # Get the container name from your cards dictionary
         container_name = "Unknown"
         for card in list(self.cards.values()) + list(self.uncategorized_cards.values()):
@@ -265,6 +272,7 @@ class DockerManager(App):
                 self.notify_error(notification_message)
 
         await self.refresh_projects()
+        self.set_timer(0.05, lambda: self.run_worker(self.refresh_projects, exclusive=True, group="refresh"))
     
     def get_selected_project(self) -> str | None:
         """Return the currently selected project name from the tree."""
@@ -342,5 +350,3 @@ class DockerManager(App):
     def notify_warning(self, message: str) -> None:
         """Show a warning notification."""
         self.notify(message, severity="warning", timeout=4)
-
-
