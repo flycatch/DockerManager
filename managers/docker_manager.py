@@ -271,13 +271,15 @@ class DockerManager(App):
             if self.uncategorized_list.children:
                 self.set_focus(self.uncategorized_list.children[0])
         elif event.pane.id == "tab-projects":
-            # Focus the ProjectsTab container itself
-            projects_tab = self.query_one(ProjectsTab)
-            self.set_focus(projects_tab)
-            
-            # Also ensure the tree has a selection
-            if self.project_tree.root.children and not self.project_tree.cursor_node:
-                self.project_tree.select_node(self.project_tree.root.children[0])
+            # Ensure the project tree exists and has a selection, then focus it
+            if hasattr(self, "project_tree") and self.project_tree is not None:
+                # If there are nodes but none selected, select the first node
+                if self.project_tree.root.children and not self.project_tree.cursor_node:
+                    self.project_tree.select_node(self.project_tree.root.children[0])
+
+                # Give keyboard focus to the Tree widget (so keys like u/o/r/x work)
+                self.set_focus(self.project_tree)
+
 
     def is_projects_tab_active(self) -> bool:
         """Check if the Projects tab is currently active"""
