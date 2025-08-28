@@ -91,7 +91,7 @@ class ProjectsTab(Horizontal, can_focus=True):
         Binding("o", "stop_project", "Down/Stop", show=True),
         Binding("r", "restart_project", "Restart", show=True),
         Binding("x", "delete_project", "Delete", show=True),
-        Binding("tab", "switch_focus", "Switch Focus", show=True),
+        Binding("escape", "switch_focus", "Switch Focus", show=False),
     ]
     def __init__(self, *, id: str | None = None):
         super().__init__(id=id)
