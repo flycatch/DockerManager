@@ -3,7 +3,9 @@ from typing import Dict, Any
 from textual.app import ComposeResult, App
 from textual.widgets import Static, TabbedContent, TabPane, Tree, Footer
 from textual.containers import Vertical, Horizontal
+from textual.widgets import TabbedContent
 from rich.text import Text
+
 from cards.container_card import ContainerCard
 from container_action_menu import ContainerActionScreen
 from service import (
@@ -12,23 +14,199 @@ from service import (
     stop_container,
     delete_container,
     start_project, stop_project, delete_project, restart_project
-
 )
+
+# -----------------------
+# Custom tab containers
+# -----------------------
+
+class ContainersTab(Vertical, can_focus=True):
+    """Container for All Containers tab with its own key bindings."""
+    BINDINGS = [
+        Binding("down", "focus_next", "Next", show=True),
+        Binding("up", "focus_previous", "Previous", show=True),
+        Binding("enter", "open_menu", "Actions", show=True),
+        Binding("s", "start_selected", "Start", show=True),
+        Binding("t", "stop_selected", "Stop", show=True),
+        Binding("x", "delete_selected", "Delete", show=True),
+    ]
+
+    def __init__(self, *, id: str | None = None):
+        super().__init__(id=id)
+        self.selected_index: int = 0
+
+
+    def _get_selected_card(self) -> ContainerCard | None:
+        """Return currently selected container card, if any."""
+        cards = [c for c in self.query(ContainerCard)]
+        if not cards:
+            return None
+        return cards[self.selected_index % len(cards)]
+
+    # ---- Actions ----
+    def action_focus_next(self) -> None:
+        cards = [c for c in self.query(ContainerCard)]
+        if not cards:
+            return
+        self.selected_index = (self.selected_index + 1) % len(cards)
+        self.app.set_focus(cards[self.selected_index])
+
+
+    def action_focus_previous(self) -> None:
+        cards = [c for c in self.query(ContainerCard)]
+        if not cards:
+            return
+        self.selected_index = (self.selected_index - 1) % len(cards)
+        self.app.set_focus(cards[self.selected_index])
+
+
+    def action_open_menu(self) -> None:
+        if card := self._get_selected_card():
+            self.app.push_screen(
+                ContainerActionScreen(card.container_id, card.container_name)
+            )
+
+    def action_start_selected(self) -> None:
+        if card := self._get_selected_card():
+            start_container(card.container_id)
+            card.update_status("running")
+
+    def action_stop_selected(self) -> None:
+        if card := self._get_selected_card():
+            stop_container(card.container_id)
+            card.update_status("exited")
+
+    def action_delete_selected(self) -> None:
+        if card := self._get_selected_card():
+            delete_container(card.container_id)
+            card.remove()
+
+class ProjectsTab(Horizontal, can_focus=True):
+    """Container for Compose Projects tab with its own key bindings."""
+    BINDINGS = [
+        Binding("down", "focus_next", "Next", show=True),
+        Binding("up", "focus_previous", "Previous", show=True),
+        Binding("enter", "open_menu", "Actions", show=True),
+        Binding("u", "start_project", "Up/Start", show=True),
+        Binding("o", "stop_project", "Down/Stop", show=True),
+        Binding("r", "restart_project", "Restart", show=True),
+        Binding("x", "delete_project", "Delete", show=True),
+        Binding("tab", "switch_focus", "Switch Focus", show=True),
+    ]
+    def __init__(self, *, id: str | None = None):
+        super().__init__(id=id)
+        self.selected_index: int = 0
+
+    def _get_selected_card(self) -> ContainerCard | None:
+        """Return currently selected container card, if any."""
+        cards = [c for c in self.query(ContainerCard)]
+        if not cards:
+            return None
+        return cards[self.selected_index % len(cards)]
+
+    def action_open_menu(self) -> None:
+        if card := self._get_selected_card():
+            self.app.push_screen(
+                ContainerActionScreen(card.container_id, card.container_name)
+            )
+
+    def action_focus_next(self) -> None:
+        cards = [c for c in self.query(ContainerCard)]
+        if not cards:
+            return
+        self.selected_index = (self.selected_index + 1) % len(cards)
+        self.app.set_focus(cards[self.selected_index])
+
+
+    def action_focus_previous(self) -> None:
+        cards = [c for c in self.query(ContainerCard)]
+        if not cards:
+            return
+        self.selected_index = (self.selected_index - 1) % len(cards)
+        self.app.set_focus(cards[self.selected_index])
+
+    def _get_selected_project(self) -> str | None:
+        tree = self.query_one(Tree)
+        node = tree.cursor_node
+        if node and node.data:
+            label = node.label.plain if isinstance(node.label, Text) else str(node.label)
+            if label and len(label) > 1:
+                return label[1:].strip()
+        return None
+
+    def _maybe_run_refresh(self) -> None:
+        """Call DockerManager.refresh_projects via getattr to avoid Pylance static error."""
+        refresh = getattr(self.app, "refresh_projects", None)
+        if callable(refresh):
+            # run_worker belongs to App and is safe to call; pass the refresh coroutine/callable
+            try:
+                self.app.run_worker(refresh, exclusive=True, group="refresh")
+            except Exception:
+                # swallow runtime errors here to avoid crashing from unexpected call signatures
+                pass
+
+    def _notify(self, method: str, message: str) -> None:
+        fn = getattr(self.app, method, None)
+        if callable(fn):
+            try:
+                fn(message)
+            except Exception:
+                pass
+
+    def action_start_project(self) -> None:
+        if project := self._get_selected_project():
+            if start_project(project):
+                self._notify("notify_success", f"Started project: {project}")
+                self._maybe_run_refresh()
+            else:
+                self._notify("notify_error", f"Failed to start project: {project}")
+
+    def action_stop_project(self) -> None:
+        if project := self._get_selected_project():
+            if stop_project(project):
+                self._notify("notify_success", f"Stopped project: {project}")
+                self._maybe_run_refresh()
+            else:
+                self._notify("notify_error", f"Failed to stop project: {project}")
+
+    def action_restart_project(self) -> None:
+        if project := self._get_selected_project():
+            if restart_project(project):
+                self._notify("notify_success", f"Restarted project: {project}")
+                self._maybe_run_refresh()
+            else:
+                self._notify("notify_error", f"Failed to restart project: {project}")
+
+    def action_delete_project(self) -> None:
+        if project := self._get_selected_project():
+            if delete_project(project):
+                self._notify("notify_success", f"Deleted project: {project}")
+                self._maybe_run_refresh()
+            else:
+                self._notify("notify_error", f"Failed to delete project: {project}")
+
+    def action_switch_focus(self) -> None:
+        """Switch focus between the project tree and the container list."""
+        current_focus = self.screen.focused
+        tree = self.query_one(Tree)
+        container_list = self.query_one("#container-list")
+        if current_focus == tree:
+            if container_list.children:
+                # focus first child of container_list
+                self.app.set_focus(container_list.children[0])
+        else:
+            self.app.set_focus(tree)
+
 
 
 class DockerManager(App):
     CSS_PATH = "../ui.tcss"
-    BINDINGS = [
-        ("q", "quit", "Quit"),
-        ("down", "focus_next", "Next Container"),
-        ("up", "focus_previous", "Previous Container"),
-        ("enter", "open_menu", "Container Actions"),
-        ("u", "start_project", "Project Up/Start"),
-        ("o", "stop_project", "Project Down/Stop"),
-        ("r", "restart_project", "Restart Project"),
-        ("x", "delete_project", "Delete Project"),
-    ]
     ENABLE_COMMAND_PALETTE = False
+    BINDINGS = [
+        Binding("1", "goto_uncategorized", "Standalone", show=True),
+        Binding("2", "goto_projects", "Services", show=True),
+        Binding("q", "quit", "Quit", show=True)
+    ]
 
     def __init__(self):
         super().__init__()
@@ -37,18 +215,20 @@ class DockerManager(App):
         self.projects: dict[str, list[tuple[int, str, str, str, str]]] = {}
         self._refreshing = False
         self.current_project: str | None = None
-        self._last_focused_id: str | None = None  # Add this line
-        self._last_containers: dict[str, tuple[str, str, str, str]] = {}  # NEW: snapshot {id: (name, image, status)}
+        self._last_focused_id: str | None = None
+        self._last_containers: dict[str, tuple[str, str, str, str]] = {}
 
     def compose(self) -> ComposeResult:
 
         with TabbedContent():
-            with TabPane("🟡 All Containers", id="tab-uncategorized"):
-                self.uncategorized_list = Vertical(id="uncategorized-list")
+            # --- All Containers tab ---
+            with TabPane("🟡 Standalone", id="tab-uncategorized"):
+                self.uncategorized_list = ContainersTab(id="uncategorized-list")
                 yield self.uncategorized_list
 
-            with TabPane("🟢 Compose Projects", id="tab-projects"):
-                with Horizontal(id="projects-layout"):
+            # --- Projects tab ---
+            with TabPane("🟢 Services", id="tab-projects"):
+                with ProjectsTab(id="projects-layout"):
                     self.project_tree = Tree("🔹Compose Projects", id="project-tree")
                     self.container_list = Vertical(id="container-list")
                     yield self.project_tree
@@ -59,6 +239,50 @@ class DockerManager(App):
     async def on_mount(self) -> None:
         self.set_interval(2.0, self.trigger_background_refresh)
         await self.refresh_projects()
+
+    def _get_tabbed(self) -> TabbedContent:
+        return self.query_one(TabbedContent)
+
+    def action_goto_uncategorized(self) -> None:
+        self._get_tabbed().active = "tab-uncategorized"
+
+    def action_goto_projects(self) -> None:
+        self._get_tabbed().active = "tab-projects"
+
+    def action_next_tab(self) -> None:
+        tabbed = self._get_tabbed()
+        panes = [p for p in tabbed.query(TabPane)]
+        ids   = [p.id for p in panes if p.id]
+        if not ids:
+            return
+        try:
+            idx = ids.index(tabbed.active)
+        except ValueError:
+            idx = 0
+        tabbed.active = ids[(idx + 1) % len(ids)]
+
+    # -----------------------
+    # Focus switching on tab change
+    # -----------------------
+    async def on_tabbed_content_tab_activated(
+        self, event: TabbedContent.TabActivated
+    ) -> None:
+        if event.pane.id == "tab-uncategorized":
+            if self.uncategorized_list.children:
+                self.set_focus(self.uncategorized_list.children[0])
+        elif event.pane.id == "tab-projects":
+            # Focus the ProjectsTab container itself
+            projects_tab = self.query_one(ProjectsTab)
+            self.set_focus(projects_tab)
+            
+            # Also ensure the tree has a selection
+            if self.project_tree.root.children and not self.project_tree.cursor_node:
+                self.project_tree.select_node(self.project_tree.root.children[0])
+
+    def is_projects_tab_active(self) -> bool:
+        """Check if the Projects tab is currently active"""
+        tabbed_content = self.query_one(TabbedContent)
+        return tabbed_content.active == "tab-projects"
 
     def trigger_background_refresh(self) -> None:
         self.run_worker(self.refresh_projects, exclusive=True, group="refresh")
@@ -189,54 +413,6 @@ class DockerManager(App):
         # Use the same logic as get_selected_project() for consistency
         self.current_project = self.get_selected_project()
 
-    def action_focus_next(self):
-        self.screen.focus_next()
-        self.query_one("#container-list").scroll_visible()
-
-    def action_focus_previous(self):
-        self.screen.focus_previous()
-        self.query_one("#container-list").scroll_visible()
-
-    def action_start_selected(self):
-        focused = self.screen.focused
-        if isinstance(focused, ContainerCard):
-            container_id = focused.container_id
-            if start_container(container_id):
-                self.notify_success(f"Started container: {focused.container_name}")
-                # Store the ID to restore focus after refresh
-                self._last_focused_id = container_id
-                self.run_worker(self.refresh_projects, exclusive=True, group="refresh")
-            else:
-                self.notify_error(f"Failed to start container: {focused.container_name}")
-
-    def action_stop_selected(self):
-        focused = self.screen.focused
-        if isinstance(focused, ContainerCard):
-            container_id = focused.container_id
-            if stop_container(container_id):
-                self.notify_success(f"Stopped container: {focused.container_name}")
-                self._last_focused_id = container_id
-                self.run_worker(self.refresh_projects, exclusive=True, group="refresh")
-            else:
-                self.notify_error(f"Failed to stop container: {focused.container_name}")
-
-    def action_delete_selected(self):
-        focused = self.screen.focused
-        if isinstance(focused, ContainerCard):
-            container_id = focused.container_id
-            container_name = focused.container_name
-            if delete_container(container_id):
-                self.notify_success(f"Deleted container: {container_name}")
-                # Don't try to restore focus for deleted containers
-                self._last_focused_id = None
-                self.run_worker(self.refresh_projects, exclusive=True, group="refresh")
-            else:
-                self.notify_error(f"Failed to delete container: {container_name}")
-
-    def action_open_menu(self):
-        focused = self.screen.focused
-        if isinstance(focused, ContainerCard):
-            self.push_screen(ContainerActionScreen(focused.container_id, focused.container_name))
 
     async def on_container_action_screen_selected(self, message: ContainerActionScreen.Selected):
         cid = message.container_id
@@ -291,53 +467,6 @@ class DockerManager(App):
             return raw_label
         return None
 
-    def action_start_project(self):
-        project = self.current_project or self.get_selected_project()
-        if project:
-            if start_project(project):
-                self.notify_success(f"Started project: {project}")
-                self.run_worker(self.refresh_projects, exclusive=True, group="refresh")
-            else:
-                self.notify_error(f"Failed to start project: {project}")
-        else:
-            self.notify_warning("No project selected")
-            self.app.bell()
-
-    def action_stop_project(self):
-        project = self.current_project or self.get_selected_project()
-        if project:
-            if stop_project(project):
-                self.notify_success(f"Stopped project: {project}")
-                self.run_worker(self.refresh_projects, exclusive=True, group="refresh")
-            else:
-                self.notify_error(f"Failed to stop project: {project}")
-        else:
-            self.notify_warning("No project selected")
-            self.app.bell()
-
-    def action_delete_project(self):
-        project = self.current_project or self.get_selected_project()
-        if project:
-            if delete_project(project):
-                self.notify_success(f"Deleted project: {project}")
-                self.run_worker(self.refresh_projects, exclusive=True, group="refresh")
-            else:
-                self.notify_error(f"Failed to delete project: {project}")
-        else:
-            self.notify_warning("No project selected")
-            self.app.bell()
-
-    def action_restart_project(self):
-        project = self.current_project or self.get_selected_project()
-        if project:
-            if restart_project(project):
-                self.notify_success(f"Restarted project: {project}")
-                self.run_worker(self.refresh_projects, exclusive=True, group="refresh")
-            else:
-                self.notify_error(f"Failed to restart project: {project}")
-        else:
-            self.notify_warning("No project selected")
-            self.app.bell()
 
     def notify_success(self, message: str) -> None:
         """Show a success notification."""
