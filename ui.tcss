@@ -2,12 +2,16 @@
 
 /* 📦 Container List */
 #container-list {
-  margin: 1 0;
+  margin: 0 0;
   height: 1fr;
   overflow: auto;
   border: round #45475a;
   background: #1e1e2e;
 }
+#container-list:focus-within {
+    border: round #89b4fa;    
+}
+
 
 .container-card {
   padding: 0;
@@ -17,6 +21,9 @@
   grid-columns: 2fr 3fr 2fr;
   # background: #313244;
   margin-bottom: 0;
+  margin-left:1;
+  margin-right:1;
+  margin-top:0;
 }
 
 /* 🟡 Focused Container */
@@ -225,19 +232,29 @@ ScrollView#logs {
   border: round #585b70;
   background: #1e1e2e;
   height: 1fr;
+  opacity: 0.6;
+  margin: 0 0;
 }
 
+
+#projects-layout:focus-within {
+    opacity: 1;    
+}
 /* 🌳 Compose Project Tree */
 #project-tree {
-  border: round #89b4fa;
-  padding: 1 2;
-  margin: 1 0;
+  border: round #79879eff;
+  padding: 1 1;
+  margin: 0 0;
   background: #1e1e2e;
   height: 1fr;
   overflow: auto;
   width: 50;
   color: #cdd6f4;
   scrollbar-gutter: stable;
+}
+/* Highlight when focused */
+#project-tree:focus-within {
+    border: round #89b4fa;    /* active blue */
 }
 
 .tree--label {
@@ -262,4 +279,17 @@ ProjectsTab:focus {
 
 #projects-layout:focus-within {
     border: round #89b4fa;
+}
+
+
+/* Style for the standalone tab */
+#tab-uncategorized {
+    border: round #89b4fa;
+}
+
+/* Active tab styling */
+#tab-uncategorized.-active {
+    border: double blue;
+    background: blue;
+    color: white;
 }
