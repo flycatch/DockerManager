@@ -296,6 +296,7 @@ ProjectsTab:focus {
 
 /* Search input styling - hidden by default */
 #uncategorized-search {
+    dock: bottom;
     border: round #585b70;
     background: #1e1e2e;
     color: #cdd6f4;
@@ -303,6 +304,7 @@ ProjectsTab:focus {
     margin: 0 0;
     padding: 0 0;
     display: none; /* Hidden by default */
+    layer: overlay;
 }
 
 #uncategorized-search.search-active {
@@ -317,4 +319,60 @@ ProjectsTab:focus {
     background: #1e1e2e;
     padding: 0 0;
 
+}
+
+/* 🎛 Floating Filter Dropdown */
+#filter-dropdown {
+  dock: bottom;
+  margin: 0 0;
+  color: #cdd6f4;
+  width: 40;
+  padding: 0 0;
+  border: round #89b4fa;
+  display: none; /* hidden by default */
+  layer: overlay; /* float above all */
+}
+
+/* Focused filter dropdown */
+#filter-dropdown:focus {
+  color: #d6ed64;
+  border: round #89b4fa;
+}
+
+#filter-dropdown > .option-list {
+  border: heavy #585b70;       /* border around the opened list */
+  background: #1e1e2e;         /* background of list */
+  padding: 0 1;                /* inner spacing for options */
+  layer: overlay;              /* ensure it floats above content */
+  width: 40;                 /* can match parent width */
+}
+
+/* Individual options */
+#filter-dropdown Option {
+  padding: 0 1;                /* spacing inside each option */
+}
+
+#filter-dropdown Option:hover {
+  background: #3a3b47;         /* hover highlight */
+  color: #d6ed64;
+}
+
+#filter-dropdown Option:disabled {
+  color: #555555;              /* greyed out disabled option */
+}
+
+.hidden {
+    display: none;
+}
+
+#no-results-message {
+    margin: 22;
+    text-align: center;
+    padding: 0;
+    color: #888888;  /* Changed from text-muted to a valid color */
+
+}
+
+#no-results-message.hidden {
+    display: none;
 }

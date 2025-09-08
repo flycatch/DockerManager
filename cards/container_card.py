@@ -11,6 +11,23 @@ class ContainerCard(Static):
         self.status = status
         self.status_widget: Static | None = None
 
+    @property
+    def status_key(self) -> str:
+        """Normalize Docker status string into one of: running, exited, restarting, paused, dead."""
+        s = (self.status or "").lower()
+        if s.startswith("up"):
+            return "running"
+        elif s.startswith("exited"):
+            return "exited"
+        elif s.startswith("restarting"):
+            return "restarting"
+        elif s.startswith("paused"):
+            return "paused"
+        elif s.startswith("dead"):
+            return "dead"
+        return "other"
+
+
     can_focus = True
 
     def compose(self) -> ComposeResult:

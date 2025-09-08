@@ -1,12 +1,12 @@
 from textual.binding import Binding
 from typing import Dict, Any, Optional
 from textual.app import ComposeResult, App
-from textual.widgets import TabbedContent, TabPane, Tree, Footer, Input
+from textual.widgets import TabbedContent, TabPane, Tree, Footer, Input, Static
 from textual.containers import Vertical, Horizontal
 from textual.widgets import TabbedContent
 from rich.text import Text
 from textual.reactive import reactive
-
+from textual.widgets import Select
 from cards.container_card import ContainerCard
 from container_action_menu import ContainerActionScreen
 from service import (
@@ -32,22 +32,117 @@ class ContainersTab(Vertical, can_focus=True):
         Binding("x", "delete_selected", "Delete", show=True),
         Binding("/", "focus_search", "Search", show=True),
         Binding("escape", "clear_search", "Clear Search", show=False),
+        Binding("f", "toggle_filter", "Filter", show=True),   # NEW
+        Binding("escape", "clear_search_or_filter", "Clear", show=False),  # UPDATED
     ]
 
     def __init__(self, *, id: str | None = None):
         super().__init__(id=id)
         self.selected_index: int = 0
         self.search_active = reactive(False)
-        self.search_input = None
+        self.filter_active = reactive(False)
+        self.search_input: Optional[Input] = None
+        self.filter_dropdown: Optional[Select] = None
+        self.no_results_message: Optional[Static] = None  # Add this line
+
 
     def compose(self) -> ComposeResult:
-        """Search input lives at the top of the tab so mounted cards appear after it."""
+        # search input
         self.search_input = Input(
-            placeholder="Search containers (name, image, status)...", 
+            placeholder="Search containers (name, image, status)...",
             id="uncategorized-search",
-            classes="search-input"
+            classes="search-input hidden"
         )
         yield self.search_input
+
+        # filter dropdown (hidden by default)
+        self.filter_dropdown = Select(
+            options=[
+                ("All", "all"),
+                ("Running", "running"),
+                ("Restarting", "restarting"),
+                ("Stopped", "exited"),
+            ],
+            prompt="Filter by status",
+            compact=True,
+            id="filter-dropdown",
+            classes="hidden"
+        )
+        self.filter_dropdown.styles.display = "none"
+        yield self.filter_dropdown
+        
+        # Create the no results message (hidden by default)
+        no_results_msg = Static(
+            "No containers match the current filter",
+            id="no-results-message",
+            classes="hidden"
+        )
+        no_results_msg.styles.display = "none"
+        self.no_results_message = no_results_msg
+        yield no_results_msg
+
+    
+    def action_toggle_filter(self) -> None:
+        """Show or hide the filter dropdown."""
+        if self.filter_dropdown:
+            self.filter_active = not self.filter_active
+            if self.filter_active:
+                self.filter_dropdown.styles.display = "block"
+                self.app.set_focus(self.filter_dropdown)
+            else:
+                self.filter_dropdown.styles.display = "none"
+                self.app.set_focus(self._get_selected_card() or self)
+            self.filter_dropdown.refresh()
+
+
+    def action_clear_search_or_filter(self) -> None:
+        """Escape key closes search or filter menu if active."""
+        if self.search_active:
+            self.action_clear_search()
+            return
+
+        if self.filter_active and self.filter_dropdown:
+            self.filter_active = False
+            self.filter_dropdown.styles.display = "none"
+            self.filter_dropdown.refresh()
+            self.app.set_focus(self._get_selected_card() or self)
+
+    async def on_select_changed(self, event: Select.Changed) -> None:
+        """Filter containers based on dropdown value and auto-close."""
+        if event.select.id != "filter-dropdown":
+            return
+        selected = event.value or "all"
+        cards = [c for c in self.query(ContainerCard)]
+
+        for card in cards:
+            if selected == "all":
+                card.styles.display = "block"
+            else:
+                card.styles.display = "block" if card.status_key == selected else "none"
+
+        # Show/hide no results message
+        visible_cards = [c for c in cards if c.styles.display != "none"]
+        if self.no_results_message:
+            if not visible_cards:
+                self.no_results_message.styles.display = "block"
+            else:
+                self.no_results_message.styles.display = "none"
+            self.no_results_message.refresh()
+
+        # Auto-close the filter dropdown after selection
+        self.filter_active = False
+        if self.filter_dropdown:
+            self.filter_dropdown.styles.display = "none"
+            self.filter_dropdown.refresh()
+
+        # Reset focus to first visible card or to the tab itself if no cards
+        if visible_cards:
+            self.app.set_focus(visible_cards[0])
+            self.selected_index = 0
+        else:
+            self.app.set_focus(self)
+
+
 
     def _get_search_input(self) -> Optional[Input]:
         """Find the search Input safely and ensure its type for the type-checker."""
@@ -118,7 +213,14 @@ class ContainersTab(Vertical, can_focus=True):
             else:
                 card.styles.display = "block" if self._matches(card, query) else "none"
 
+        # Show/hide no results message
         visible = [c for c in cards if c.styles.display != "none"]
+        if self.no_results_message:
+            if not visible:
+                self.no_results_message.styles.display = "block"
+            else:
+                self.no_results_message.styles.display = "none"
+            self.no_results_message.refresh()
 
         # If no visible cards, reset selected index
         if not visible:
