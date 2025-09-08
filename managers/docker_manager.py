@@ -27,9 +27,6 @@ class ContainersTab(Vertical, can_focus=True):
         Binding("down", "focus_next", "Next", show=True),
         Binding("up", "focus_previous", "Previous", show=True),
         Binding("enter", "open_menu", "Actions", show=True),
-        Binding("s", "start_selected", "Start", show=True),
-        Binding("t", "stop_selected", "Stop", show=True),
-        Binding("x", "delete_selected", "Delete", show=True),
         Binding("/", "focus_search", "Search", show=True),
         Binding("escape", "clear_search", "Clear Search", show=False),
         Binding("f", "toggle_filter", "Filter", show=True),   # NEW
@@ -269,21 +266,6 @@ class ContainersTab(Vertical, can_focus=True):
             self.app.push_screen(
                 ContainerActionScreen(card.container_id, card.container_name)
             )
-
-    def action_start_selected(self) -> None:
-        if card := self._get_selected_card():
-            start_container(card.container_id)
-            card.update_status("running")
-
-    def action_stop_selected(self) -> None:
-        if card := self._get_selected_card():
-            stop_container(card.container_id)
-            card.update_status("exited")
-
-    def action_delete_selected(self) -> None:
-        if card := self._get_selected_card():
-            delete_container(card.container_id)
-            card.remove()
 
 
 class ProjectsTab(Horizontal, can_focus=True):
