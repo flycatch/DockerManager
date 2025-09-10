@@ -224,8 +224,6 @@ ScrollView#logs {
 }
 
 
-
-
 /* 🧩 Compose Projects Layout */
 #projects-layout {
   layout: horizontal;
@@ -300,7 +298,7 @@ ProjectsTab:focus {
     border: round #585b70;
     background: #1e1e2e;
     color: #cdd6f4;
-    width: 100%;
+    width: 40;
     margin: 0 0;
     padding: 0 0;
     display: none; /* Hidden by default */
@@ -375,4 +373,26 @@ ProjectsTab:focus {
 
 #no-results-message.hidden {
     display: none;
+}
+
+/* Project search input */
+#project-search {
+    display: none;                  /* hidden by default */
+    border: round #89b4fa;
+    background: #1e1e2e;
+    padding: 0 0;
+    height: 3;                      /* consistent height */
+    width: 24.5%;                    /* full width */
+    margin: 0 0;                /* little spacing below */
+    layer: overlay;
+    dock: bottom;
+  
+}
+
+/* When search is active */
+#project-search.search-active {
+    display: block;
+    border: round #89b4fa;
+    background: #1e1e2e;
+    color: #cdd6f4;
 }
