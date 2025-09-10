@@ -17,8 +17,8 @@
   padding: 0;
   border: none;
   layout: grid;
-  grid-size: 3;
-  grid-columns: 2fr 3fr 2fr;
+  grid-size: 6;
+  grid-columns: 1fr 2fr 2fr 1fr 2fr 1.5fr;
   # background: #313244;
   margin-bottom: 0;
   margin-left:1;
@@ -57,6 +57,22 @@
 .col.status {
   padding: 0;
   color: #f9e2af;
+}
+
+
+/* Add styles for new columns */
+.col.ports {
+  color: #cba6f7;
+  content-align: center middle;
+}
+
+.col.created {
+  color: #f5c2e7;
+  content-align: center middle;
+}
+
+.col.id {
+  color: #a6adc8;
 }
 
 .status-running {
@@ -396,3 +412,4 @@ ProjectsTab:focus {
     background: #1e1e2e;
     color: #cdd6f4;
 }
+

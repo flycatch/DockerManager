@@ -29,7 +29,7 @@ class DockerManager(App):
         super().__init__()
         self.cards: Dict[str, ContainerCard] = {}
         self.uncategorized_cards: Dict[str, ContainerCard] = {}
-        self.projects: dict[str, list[tuple[int, str, str, str, str]]] = {}
+        self.projects: dict[str, list[tuple[int, str, str, str, str, str, str]]] = {}
         self._refreshing = False
         self.current_project: str | None = None
         self._last_focused_id: str | None = None
@@ -147,9 +147,14 @@ class DockerManager(App):
             # Flatten into a {cid: (name, image, status)} dict for comparison
             new_snapshot = {}
             for project, containers in all_projects.items():
-                for _, cid, name, image, status in containers:
+                for item in containers:
+                    # be flexible about tuple length (works if containers are 5-tuple or 7-tuple)
+                    try:
+                        _, cid, name, image, status, *rest = item
+                    except ValueError:
+                        # something unexpected; skip this container safely
+                        continue
                     new_snapshot[cid] = (name, image, status)
-
             # --- CASE 1: Only statuses changed ---
             if (
                 set(new_snapshot.keys()) == set(self._last_containers.keys())
@@ -200,12 +205,15 @@ class DockerManager(App):
         finally:
             self._refreshing = False
 
-    async def refresh_container_list(self, containers: list[tuple[int, str, str, str, str]]):
+    async def refresh_container_list(self, containers: list[tuple[int, str, str, str, str, str, str]]):
         await self.sync_card_list(containers, self.cards, self.container_list)
 
+    
+
+    # In the sync_card_list method, update the parameter type and unpacking
     async def sync_card_list(
         self,
-        container_data: list[tuple[int, str, str, str, str]],
+        container_data: list[tuple[int, str, str, str, str, str, str]],  # Changed to list
         container_map: dict[str, ContainerCard],
         mount_target: Vertical
     ):
@@ -221,17 +229,16 @@ class DockerManager(App):
             await card.remove()
 
         # Create a mapping of container ID to status for quick lookup
-        status_map = {cid: status for _, cid, _, _, status in container_data}
+        status_map = {cid: status for _, cid, _, _, status, _, _ in container_data}  # Added unpacking for ports and created
 
-        # Update existing cards
         for cid in old_ids & new_ids:
             if cid in container_map and cid in status_map:
                 container_map[cid].update_status(status_map[cid])
-
-        # Add new cards
-        for idx, cid, name, image, status in container_data:
+        
+        # Add new cards - note the additional parameters
+        for idx, cid, name, image, status, ports, created in container_data:  # Now unpacking all 7 values
             if cid not in container_map:
-                card = ContainerCard(idx, cid, name, image, status)
+                card = ContainerCard(idx, cid, name, image, status, ports, created)
                 container_map[cid] = card
                 await mount_target.mount(card)
 
