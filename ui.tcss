@@ -224,8 +224,6 @@ ScrollView#logs {
 }
 
 
-
-
 /* 🧩 Compose Projects Layout */
 #projects-layout {
   layout: horizontal;
@@ -292,4 +290,109 @@ ProjectsTab:focus {
     border: double blue;
     background: blue;
     color: white;
+}
+
+/* Search input styling - hidden by default */
+#uncategorized-search {
+    dock: bottom;
+    border: round #585b70;
+    background: #1e1e2e;
+    color: #cdd6f4;
+    width: 40;
+    margin: 0 0;
+    padding: 0 0;
+    display: none; /* Hidden by default */
+    layer: overlay;
+}
+
+#uncategorized-search.search-active {
+    border: round #89b4fa;
+    background: #1e1e2e;
+    width: 40;
+    padding: 0 0;
+}
+
+#uncategorized-search:focus {
+    border: round #89b4fa;
+    background: #1e1e2e;
+    padding: 0 0;
+
+}
+
+/* 🎛 Floating Filter Dropdown */
+#filter-dropdown {
+  dock: bottom;
+  margin: 0 0;
+  color: #cdd6f4;
+  width: 40;
+  padding: 0 0;
+  border: round #89b4fa;
+  display: none; /* hidden by default */
+  layer: overlay; /* float above all */
+}
+
+/* Focused filter dropdown */
+#filter-dropdown:focus {
+  color: #d6ed64;
+  border: round #89b4fa;
+}
+
+#filter-dropdown > .option-list {
+  border: heavy #585b70;       /* border around the opened list */
+  background: #1e1e2e;         /* background of list */
+  padding: 0 1;                /* inner spacing for options */
+  layer: overlay;              /* ensure it floats above content */
+  width: 40;                 /* can match parent width */
+}
+
+/* Individual options */
+#filter-dropdown Option {
+  padding: 0 1;                /* spacing inside each option */
+}
+
+#filter-dropdown Option:hover {
+  background: #3a3b47;         /* hover highlight */
+  color: #d6ed64;
+}
+
+#filter-dropdown Option:disabled {
+  color: #555555;              /* greyed out disabled option */
+}
+
+.hidden {
+    display: none;
+}
+
+#no-results-message {
+    margin: 22;
+    text-align: center;
+    padding: 0;
+    color: #888888;  /* Changed from text-muted to a valid color */
+
+}
+
+#no-results-message.hidden {
+    display: none;
+}
+
+/* Project search input */
+#project-search {
+    display: none;                  /* hidden by default */
+    border: round #89b4fa;
+    background: #1e1e2e;
+    padding: 0 0;
+    height: 3;                      /* consistent height */
+    width: 24.5%;                    /* full width */
+    margin: 0 0;                /* little spacing below */
+    layer: overlay;
+    dock: bottom;
+  
+}
+
+/* When search is active */
+#project-search.search-active {
+    display: block;
+    border: round #89b4fa;
+    background: #1e1e2e;
+    color: #cdd6f4;
 }

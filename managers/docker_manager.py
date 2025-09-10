@@ -1,11 +1,12 @@
 from textual.binding import Binding
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from textual.app import ComposeResult, App
-from textual.widgets import Static, TabbedContent, TabPane, Tree, Footer
+from textual.widgets import TabbedContent, TabPane, Tree, Footer, Input, Static
 from textual.containers import Vertical, Horizontal
 from textual.widgets import TabbedContent
 from rich.text import Text
-
+from textual.reactive import reactive
+from textual.widgets import Select
 from cards.container_card import ContainerCard
 from container_action_menu import ContainerActionScreen
 from service import (
@@ -26,39 +27,245 @@ class ContainersTab(Vertical, can_focus=True):
         Binding("down", "focus_next", "Next", show=True),
         Binding("up", "focus_previous", "Previous", show=True),
         Binding("enter", "open_menu", "Actions", show=True),
-        Binding("s", "start_selected", "Start", show=True),
-        Binding("t", "stop_selected", "Stop", show=True),
-        Binding("x", "delete_selected", "Delete", show=True),
+        Binding("/", "focus_search", "Search", show=True),
+        Binding("f", "toggle_filter", "Filter", show=True),   # NEW
+        Binding("escape", "clear_search_or_filter", "Clear", show=False),  # UPDATED
     ]
 
     def __init__(self, *, id: str | None = None):
         super().__init__(id=id)
         self.selected_index: int = 0
+        self.search_active = reactive(False)
+        self.filter_active = reactive(False)
+        self.search_input: Optional[Input] = None
+        self.filter_dropdown: Optional[Select] = None
+        self.no_results_message: Optional[Static] = None  # Add this line
 
+
+    def compose(self) -> ComposeResult:
+        # search input
+        self.search_input = Input(
+            placeholder="Search containers (name, image, status)...",
+            id="uncategorized-search",
+            classes="search-input hidden"
+        )
+        yield self.search_input
+
+        # filter dropdown (hidden by default)
+        self.filter_dropdown = Select(
+            options=[
+                ("All", "all"),
+                ("Running", "running"),
+                ("Restarting", "restarting"),
+                ("Stopped", "exited"),
+            ],
+            prompt="Filter by status",
+            compact=True,
+            id="filter-dropdown",
+            classes="hidden"
+        )
+        self.filter_dropdown.styles.display = "none"
+        yield self.filter_dropdown
+        
+        # Create the no results message (hidden by default)
+        no_results_msg = Static(
+            "No containers match the current filter",
+            id="no-results-message",
+            classes="hidden"
+        )
+        no_results_msg.styles.display = "none"
+        self.no_results_message = no_results_msg
+        yield no_results_msg
+
+    
+    def action_toggle_filter(self) -> None:
+        """Show or hide the filter dropdown."""
+        if not self.filter_dropdown:
+            return
+
+        if not self.filter_active:
+            # Open filter
+            self.filter_active = True
+            self.filter_dropdown.styles.display = "block"
+            self.app.set_focus(self.filter_dropdown)
+        else:
+            # Close filter
+            self.filter_active = False
+            self.filter_dropdown.styles.display = "none"
+            self.app.set_focus(self._get_selected_card() or self)
+
+        self.filter_dropdown.refresh()
+
+
+
+    def action_clear_search_or_filter(self) -> None:
+        """Escape key closes search or filter menu if active."""
+        if self.search_active:
+            self.action_clear_search()
+            return
+
+        if self.filter_dropdown and self.filter_dropdown.styles.display != "none":
+            self.filter_active = False
+            self.filter_dropdown.styles.display = "none"
+            self.filter_dropdown.refresh()
+            self.app.set_focus(self._get_selected_card() or self)
+
+    async def on_select_changed(self, event: Select.Changed) -> None:
+        """Filter containers based on dropdown value and auto-close."""
+        if event.select.id != "filter-dropdown":
+            return
+        selected = event.value or "all"
+        cards = [c for c in self.query(ContainerCard)]
+
+        for card in cards:
+            if selected == "all":
+                card.styles.display = "block"
+            else:
+                card.styles.display = "block" if card.status_key == selected else "none"
+
+        # Show/hide no results message
+        visible_cards = [c for c in cards if c.styles.display != "none"]
+        if self.no_results_message:
+            if not visible_cards:
+                self.no_results_message.styles.display = "block"
+            else:
+                self.no_results_message.styles.display = "none"
+            self.no_results_message.refresh()
+
+        # Auto-close the filter dropdown after selection
+        self.filter_active = False
+        if self.filter_dropdown:
+            self.filter_dropdown.styles.display = "none"
+            self.filter_dropdown.refresh()
+
+        # Reset focus to first visible card or to the tab itself if no cards
+        if visible_cards:
+            self.app.set_focus(visible_cards[0])
+            self.selected_index = 0
+        else:
+            self.app.set_focus(self)
+
+
+
+    def _get_search_input(self) -> Optional[Input]:
+        """Find the search Input safely and ensure its type for the type-checker."""
+        return self.search_input
+
+    def _matches(self, card: ContainerCard, query: str) -> bool:
+        """Return True if query matches name, image, or status."""
+        name = getattr(card, "container_name", "") or ""
+        image = getattr(card, "image", "") or getattr(card, "container_image", "") or ""
+        status = getattr(card, "status", "") or ""
+        hay = f"{name} {image} {status}".lower()
+        return query in hay
+
+    def action_focus_search(self) -> None:
+        """Show search input and focus it."""
+        inp = self._get_search_input()
+        if inp:
+            self.search_active = True
+            inp.value = ""
+            # Force the display immediately
+            inp.styles.display = "block"
+            self.app.set_focus(inp)
+
+    def action_clear_search(self) -> None:
+        """Clear search and hide the search input."""
+        inp = self._get_search_input()
+        if inp:
+            inp.value = ""
+            self.search_active = False
+            # Hide the search input immediately
+            inp.styles.display = "none"
+            # Show all cards
+            for card in self.query(ContainerCard):
+                card.styles.display = "block"
+            # Focus back to the first container card
+            cards = [c for c in self.query(ContainerCard)]
+            if cards:
+                self.app.set_focus(cards[0])
+                self.selected_index = 0
+
+    def watch_search_active(self, active: bool) -> None:
+        """Update CSS class and visibility when search becomes active/inactive"""
+        inp = self._get_search_input()
+        if inp:
+            if active:
+                inp.add_class("search-active")
+                inp.styles.display = "block"
+            else:
+                inp.remove_class("search-active")
+                inp.styles.display = "none"
+                # Show all cards when search is deactivated
+                for card in self.query(ContainerCard):
+                    card.styles.display = "block"
+
+    async def on_input_changed(self, event: Input.Changed) -> None:
+        """Filter visible ContainerCard widgets as the user types."""
+        # Only process if this is the search input and search is active
+        if event.input.id != "uncategorized-search" or not self.search_active:
+            return
+            
+        query = (event.value or "").strip().lower()
+        cards = [c for c in self.query(ContainerCard)]
+
+        # Show/hide cards based on query
+        for card in cards:
+            if not query:
+                card.styles.display = "block"
+            else:
+                card.styles.display = "block" if self._matches(card, query) else "none"
+
+        # Show/hide no results message
+        visible = [c for c in cards if c.styles.display != "none"]
+        if self.no_results_message:
+            if not visible:
+                self.no_results_message.styles.display = "block"
+            else:
+                self.no_results_message.styles.display = "none"
+            self.no_results_message.refresh()
+
+        # If no visible cards, reset selected index
+        if not visible:
+            self.selected_index = 0
+            return
+
+        # If the search input is currently focused, keep it focused so typing continues
+        search_widget = self._get_search_input()
+        if search_widget is self.app.screen.focused:
+            return
+
+        # Otherwise, ensure there is a sensible focused ContainerCard
+        if self.app.screen.focused not in visible:
+            self.selected_index = 0
+            if visible:
+                self.app.set_focus(visible[0])
 
     def _get_selected_card(self) -> ContainerCard | None:
         """Return currently selected container card, if any."""
-        cards = [c for c in self.query(ContainerCard)]
+        cards = [c for c in self.query(ContainerCard) if c.styles.display != "none"]
         if not cards:
             return None
         return cards[self.selected_index % len(cards)]
-
+    
+    def _get_visible_cards(self) -> list[ContainerCard]:
+        """Return list of currently visible container cards."""
+        return [c for c in self.query(ContainerCard) if c.styles.display != "none"]
+    
     # ---- Actions ----
     def action_focus_next(self) -> None:
-        cards = [c for c in self.query(ContainerCard)]
+        cards = self._get_visible_cards()
         if not cards:
             return
         self.selected_index = (self.selected_index + 1) % len(cards)
         self.app.set_focus(cards[self.selected_index])
 
-
     def action_focus_previous(self) -> None:
-        cards = [c for c in self.query(ContainerCard)]
+        cards = self._get_visible_cards()
         if not cards:
             return
         self.selected_index = (self.selected_index - 1) % len(cards)
         self.app.set_focus(cards[self.selected_index])
-
 
     def action_open_menu(self) -> None:
         if card := self._get_selected_card():
@@ -66,20 +273,6 @@ class ContainersTab(Vertical, can_focus=True):
                 ContainerActionScreen(card.container_id, card.container_name)
             )
 
-    def action_start_selected(self) -> None:
-        if card := self._get_selected_card():
-            start_container(card.container_id)
-            card.update_status("running")
-
-    def action_stop_selected(self) -> None:
-        if card := self._get_selected_card():
-            stop_container(card.container_id)
-            card.update_status("exited")
-
-    def action_delete_selected(self) -> None:
-        if card := self._get_selected_card():
-            delete_container(card.container_id)
-            card.remove()
 
 class ProjectsTab(Horizontal, can_focus=True):
     """Container for Compose Projects tab with its own key bindings."""
@@ -91,12 +284,151 @@ class ProjectsTab(Horizontal, can_focus=True):
         Binding("o", "stop_project", "Down/Stop", show=True),
         Binding("r", "restart_project", "Restart", show=True),
         Binding("x", "delete_project", "Delete", show=True),
-        Binding("escape", "switch_focus", "Switch Focus", show=False),
+        Binding("/", "focus_search", "Search", show=True),         # open search
+        Binding("escape", "clear_search", "Clear", show=False),    # clear/close search
     ]
+    
     def __init__(self, *, id: str | None = None):
         super().__init__(id=id)
         self.selected_index: int = 0
+        self.search_active = reactive(False)
+        self.search_input: Optional[Input] = None
+        self.no_results_message: Optional[Static] = None
 
+    def compose(self) -> ComposeResult:
+        # Search input (hidden by default). Because DockerManager mounts the Tree
+        # as a child of this ProjectsTab, the Input will appear above the Tree.
+        self.search_input = Input(
+            placeholder="Search projects... (press Enter to jump/focus)",
+            id="project-search",
+            classes="search-input hidden"
+        )
+        # hide by default; watch_search_active will show/hide
+        self.search_input.styles.display = "none"
+        yield self.search_input
+
+        # No-results message (hidden by default)
+        no_results_msg = Static(
+            "No projects match your search",
+            id="project-no-results",
+            classes="hidden"
+        )
+        no_results_msg.styles.display = "none"
+        self.no_results_message = no_results_msg
+        yield no_results_msg
+
+        # Note: your DockerManager.compose still mounts the Tree and container_list
+        # inside this ProjectsTab, so they will appear after the search input.
+
+    # ---------- Search actions ----------
+    def action_focus_search(self) -> None:
+        """Show project search input and focus it."""
+        if not self.search_input:
+            return
+        self.search_active = True
+        self.search_input.value = ""
+        self.search_input.styles.display = "block"
+        self.app.set_focus(self.search_input)
+
+    def action_clear_search(self) -> None:
+        """Hide & clear the project search input; reset selection/focus to tree."""
+        if not self.search_input:
+            return
+        self.search_input.value = ""
+        self.search_active = False
+        self.search_input.styles.display = "none"
+        # hide no-results message
+        if self.no_results_message:
+            self.no_results_message.styles.display = "none"
+            self.no_results_message.refresh()
+        # Return focus to the Tree if present, otherwise to this tab
+        try:
+            tree = self.query_one(Tree)
+            self.app.set_focus(tree)
+        except Exception:
+            self.app.set_focus(self)
+
+    def watch_search_active(self, active: bool) -> None:
+        """Update visibility CSS when toggling the search input."""
+        if not self.search_input:
+            return
+        if active:
+            self.search_input.add_class("search-active")
+            self.search_input.styles.display = "block"
+        else:
+            self.search_input.remove_class("search-active")
+            self.search_input.styles.display = "none"
+
+    async def on_input_changed(self, event: Input.Changed) -> None:
+        """
+        When the project search input changes, jump/select the first matching tree node.
+        IMPORTANT: do NOT move focus away from the Input here — that caused the single-letter typing bug.
+        """
+        if event.input.id != "project-search" or not self.search_active:
+            return
+
+        query = (event.value or "").strip().lower()
+        try:
+            tree = self.query_one(Tree)
+        except Exception:
+            return
+
+        matches: list[Any] = []
+        for node in tree.root.children:
+            label = node.label.plain if isinstance(node.label, Text) else str(node.label)
+            label_text = label.strip().lower()
+            # strip leading glyph like "🔹 " if present
+            if label_text and len(label_text) > 1:
+                compare_text = label_text[1:].strip()
+            else:
+                compare_text = label_text
+
+            if not query or query in compare_text:
+                matches.append(node)
+
+        # show/hide no-results message
+        if self.no_results_message:
+            if not matches:
+                self.no_results_message.styles.display = "block"
+            else:
+                self.no_results_message.styles.display = "none"
+            self.no_results_message.refresh()
+
+        # Select the first match so your DockerManager.on_tree_node_selected still runs,
+        # but DO NOT change focus — keep typing in the input.
+        if matches:
+            tree.select_node(matches[0])
+        else:
+            # If no matches, don't select anything
+            try:
+                tree.select_node(None)
+            except Exception:
+                pass
+
+        # Keep focus in the input so user can type multiple characters uninterrupted.
+
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+        """
+        When the user presses Enter inside the search Input:
+        - if there's a match, focus the tree so they can navigate the project with keyboard.
+        - otherwise keep focus in the input (or you could move focus to container list).
+        """
+        if event.input.id != "project-search":
+            return
+
+        try:
+            tree = self.query_one(Tree)
+        except Exception:
+            return
+
+        # If there's a selected node (i.e. a match), move focus to the tree.
+        if tree.cursor_node:
+            self.app.set_focus(tree)
+        else:
+            # No selected node — keep focus in input so user can keep typing
+            self.app.set_focus(self.search_input)
+
+    # ---------- existing actions (unchanged) ----------
     def _get_selected_card(self) -> ContainerCard | None:
         """Return currently selected container card, if any."""
         cards = [c for c in self.query(ContainerCard)]
@@ -116,7 +448,6 @@ class ProjectsTab(Horizontal, can_focus=True):
             return
         self.selected_index = (self.selected_index + 1) % len(cards)
         self.app.set_focus(cards[self.selected_index])
-
 
     def action_focus_previous(self) -> None:
         cards = [c for c in self.query(ContainerCard)]
@@ -134,15 +465,14 @@ class ProjectsTab(Horizontal, can_focus=True):
                 return label[1:].strip()
         return None
 
+
     def _maybe_run_refresh(self) -> None:
         """Call DockerManager.refresh_projects via getattr to avoid Pylance static error."""
         refresh = getattr(self.app, "refresh_projects", None)
         if callable(refresh):
-            # run_worker belongs to App and is safe to call; pass the refresh coroutine/callable
             try:
                 self.app.run_worker(refresh, exclusive=True, group="refresh")
             except Exception:
-                # swallow runtime errors here to avoid crashing from unexpected call signatures
                 pass
 
     def _notify(self, method: str, message: str) -> None:
@@ -192,11 +522,9 @@ class ProjectsTab(Horizontal, can_focus=True):
         container_list = self.query_one("#container-list")
         if current_focus == tree:
             if container_list.children:
-                # focus first child of container_list
                 self.app.set_focus(container_list.children[0])
         else:
             self.app.set_focus(tree)
-
 
 
 class DockerManager(App):
@@ -219,8 +547,9 @@ class DockerManager(App):
         self._last_containers: dict[str, tuple[str, str, str, str]] = {}
 
     def compose(self) -> ComposeResult:
-
-        with TabbedContent():
+        tabbed_content = TabbedContent()
+        self.tabbed_content = tabbed_content
+        with tabbed_content:
             # --- All Containers tab ---
             with TabPane("🟡 Standalone", id="tab-uncategorized"):
                 self.uncategorized_list = ContainersTab(id="uncategorized-list")
@@ -239,15 +568,38 @@ class DockerManager(App):
     async def on_mount(self) -> None:
         self.set_interval(2.0, self.trigger_background_refresh)
         await self.refresh_projects()
+        self.set_focus(self.tabbed_content)
 
     def _get_tabbed(self) -> TabbedContent:
         return self.query_one(TabbedContent)
+    
+    def key_escape(self) -> None:
+        """Handle Escape key globally - but let focused widgets handle it first."""
+        # Check if we're in the uncategorized tab and search is active
+        if (not self.is_projects_tab_active() and 
+            hasattr(self, 'uncategorized_list') and 
+            self.uncategorized_list and 
+            self.uncategorized_list.search_active):
+            # Let the ContainersTab handle the escape key
+            return
+        
+        # Handle other escape logic for projects tab if needed
+        if self.is_projects_tab_active():
+            pass
 
     def action_goto_uncategorized(self) -> None:
-        self._get_tabbed().active = "tab-uncategorized"
+        self.tabbed_content.active = "tab-uncategorized"
+        if self.uncategorized_list:
+            # Focus the first container card, not the search input
+            cards = self.uncategorized_list.query(ContainerCard)
+            if cards:
+                self.set_focus(cards.first())
+                self.uncategorized_list.selected_index = 0
 
     def action_goto_projects(self) -> None:
-        self._get_tabbed().active = "tab-projects"
+        self.tabbed_content.active = "tab-projects"
+        if self.project_tree:
+            self.set_focus(self.project_tree)
 
     def action_next_tab(self) -> None:
         tabbed = self._get_tabbed()
@@ -261,25 +613,31 @@ class DockerManager(App):
             idx = 0
         tabbed.active = ids[(idx + 1) % len(ids)]
 
-    # -----------------------
-    # Focus switching on tab change
-    # -----------------------
-    async def on_tabbed_content_tab_activated(
-        self, event: TabbedContent.TabActivated
-    ) -> None:
+    def _get_search_input(self) -> Optional[Input]:
+        """Return the search Input widget from the uncategorized list."""
+        uncat = getattr(self, "uncategorized_list", None)
+        if uncat is None:
+            return None
+        try:
+            widget = uncat.query_one("#uncategorized-search")
+        except Exception:
+            return None
+        return widget if isinstance(widget, Input) else None
+    
+    async def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
         if event.pane.id == "tab-uncategorized":
-            if self.uncategorized_list.children:
-                self.set_focus(self.uncategorized_list.children[0])
-        elif event.pane.id == "tab-projects":
-            # Ensure the project tree exists and has a selection, then focus it
-            if hasattr(self, "project_tree") and self.project_tree is not None:
-                # If there are nodes but none selected, select the first node
-                if self.project_tree.root.children and not self.project_tree.cursor_node:
-                    self.project_tree.select_node(self.project_tree.root.children[0])
-
-                # Give keyboard focus to the Tree widget (so keys like u/o/r/x work)
-                self.set_focus(self.project_tree)
-
+            # Ensure search is hidden when switching to this tab
+            if self.uncategorized_list:
+                self.uncategorized_list.search_active = False
+                # Focus first container card
+                first_card = None
+                for child in self.uncategorized_list.children:
+                    if isinstance(child, ContainerCard):
+                        first_card = child
+                        break
+                if first_card:
+                    self.set_focus(first_card)
+                    self.uncategorized_list.selected_index = 0
 
     def is_projects_tab_active(self) -> bool:
         """Check if the Projects tab is currently active"""
@@ -288,7 +646,6 @@ class DockerManager(App):
 
     def trigger_background_refresh(self) -> None:
         self.run_worker(self.refresh_projects, exclusive=True, group="refresh")
-
 
     async def refresh_projects(self):
         if self._refreshing:
@@ -364,7 +721,6 @@ class DockerManager(App):
         mount_target: Vertical
     ):
         current_focused = self.screen.focused
-        # Add type check before accessing container_id
         focused_id = getattr(current_focused, 'container_id', None) if (current_focused and isinstance(current_focused, ContainerCard)) else None
         
         new_ids = {cid for _, cid, *_ in container_data}
@@ -395,9 +751,16 @@ class DockerManager(App):
             focused_card = self.get_container_card_by_id(focused_id)
             if focused_card:
                 self.set_focus(focused_card)
-        elif mount_target.children:
-            # Focus on first container if available and no previous focus
-            self.set_focus(mount_target.children[0])
+        else:
+            # Find first ContainerCard child (skip the search Input if present)
+            first_card = None
+            for child in mount_target.children:
+                if isinstance(child, ContainerCard):
+                    first_card = child
+                    break
+
+            if first_card:
+                self.set_focus(first_card)
 
     def get_container_card_by_id(self, container_id: str) -> ContainerCard | None:
         """Find a container card by ID in either cards dictionary"""
@@ -412,15 +775,13 @@ class DockerManager(App):
         if containers:
             await self.refresh_container_list(containers)
 
-        # Use the same logic as get_selected_project() for consistency
         self.current_project = self.get_selected_project()
-
 
     async def on_container_action_screen_selected(self, message: ContainerActionScreen.Selected):
         cid = message.container_id
         action = message.action
         self.disabled = False
-        # Get the container name from your cards dictionary
+        
         container_name = "Unknown"
         for card in list(self.cards.values()) + list(self.uncategorized_cards.values()):
             if card.container_id == cid:
@@ -440,7 +801,6 @@ class DockerManager(App):
             success = delete_container(cid)
             notification_message = f"Deleted container: {container_name}" if success else f"Failed to delete container: {container_name}"
         elif action == "logs":
-            # Handle logs view
             pass
 
         if action != "logs" and notification_message:
@@ -457,18 +817,15 @@ class DockerManager(App):
         if self.project_tree and self.project_tree.cursor_node:
             label = self.project_tree.cursor_node.label
             
-            # Extract the raw label text
             if isinstance(label, Text):
                 raw_label = label.plain.strip()
             else:
                 raw_label = str(label).strip()
             
-            # Remove the first character (the icon) and any leading/trailing whitespace
             if raw_label and len(raw_label) > 1:
-                return raw_label[1:].strip()  # Remove first char and trim
+                return raw_label[1:].strip()
             return raw_label
         return None
-
 
     def notify_success(self, message: str) -> None:
         """Show a success notification."""
