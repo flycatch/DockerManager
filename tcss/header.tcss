@@ -1,0 +1,39 @@
+/* 🔠 Container Header */
+.container-header {
+  layout: grid;
+  grid-size: 6;
+  grid-columns: 1fr 2fr 2fr 1fr 2fr 1.8fr;
+  padding: 0 1;
+  margin: 0 0;
+  text-style: bold;
+  border-bottom: round #45475a;
+  background: #1e1e2e;
+}
+
+/* Base header col style */
+.container-header .col {
+  padding: 0 1;
+  content-align: left middle;
+  color: #cdd6f4;
+}
+
+/* Individual column tweaks */
+.container-header .id {
+  color: #a6adc8;
+}
+.container-header .name {
+  color: #94e2d5;
+}
+.container-header .image {
+  color: #a6e3a1;
+}
+.container-header .created {
+  color: #f5c2e7;
+}
+.container-header .ports {
+  color: #cba6f7;
+  content-align: center middle;
+}
+.container-header .status {
+  color: #f9e2af;
+}
