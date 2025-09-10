@@ -1,11 +1,16 @@
-from textual.containers import Horizontal
 from textual.widgets import Static
 from textual.app import ComposeResult
 
-class ContainerHeader(Horizontal):
-    """Single-row header for the container table."""
+class ContainerHeader(Static):
+    """Header row for container lists"""
+
+    def __init__(self):
+        super().__init__(classes="container-header")
 
     def compose(self) -> ComposeResult:
-        yield Static("Container Name", classes="col name header")
-        yield Static("Image", classes="col image header")
-        yield Static("Status", classes="col status header")
+        yield Static("ID", classes="col id")
+        yield Static("Name", classes="col name")
+        yield Static("Image", classes="col image")
+        yield Static("Created", classes="col created")
+        yield Static("Ports", classes="col ports")
+        yield Static("Status", classes="col status")

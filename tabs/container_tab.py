@@ -7,7 +7,7 @@ from textual.reactive import reactive
 from textual.widgets import Select
 from cards.container_card import ContainerCard
 from container_action_menu import ContainerActionScreen
-
+from cards.container_header import ContainerHeader
 
 class ContainersTab(Vertical, can_focus=True):
     """Container for All Containers tab with its own key bindings."""
@@ -38,6 +38,7 @@ class ContainersTab(Vertical, can_focus=True):
             classes="search-input hidden"
         )
         yield self.search_input
+        yield ContainerHeader()  # Add the header here, below the search input
 
         # filter dropdown (hidden by default)
         self.filter_dropdown = Select(

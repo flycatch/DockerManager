@@ -15,9 +15,10 @@ from service import (
 )
 from tabs.container_tab import ContainersTab
 from tabs.project_tab import ProjectsTab
+from cards.container_header import ContainerHeader
 
 class DockerManager(App):
-    CSS_PATH = "../ui.tcss"
+    CSS_PATH = ["../tcss/ui.tcss", "../tcss/header.tcss"]
     ENABLE_COMMAND_PALETTE = False
     BINDINGS = [
         Binding("1", "goto_uncategorized", "Standalone", show=True),
@@ -48,9 +49,11 @@ class DockerManager(App):
             with TabPane("🟢 Services", id="tab-projects"):
                 with ProjectsTab(id="projects-layout"):
                     self.project_tree = Tree("🔹Compose Projects", id="project-tree")
-                    self.container_list = Vertical(id="container-list")
                     yield self.project_tree
-                    yield self.container_list
+                    with Vertical(id="container-section"):
+                        yield ContainerHeader()
+                        self.container_list = Vertical(id="container-list")
+                        yield self.container_list
 
         yield Footer()
 
