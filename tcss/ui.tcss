@@ -18,7 +18,7 @@
   border: none;
   layout: grid;
   grid-size: 6;
-  grid-columns: 1fr 2fr 2fr 1fr 2fr 1.5fr;
+  grid-columns: 1fr 2fr 2fr 1fr 2fr 1.8fr;
   # background: #313244;
   margin-bottom: 0;
   margin-left:1;
@@ -68,7 +68,7 @@
 
 .col.created {
   color: #f5c2e7;
-  content-align: center middle;
+  content-align: left middle;
 }
 
 .col.id {
@@ -413,3 +413,52 @@ ProjectsTab:focus {
     color: #cdd6f4;
 }
 
+
+/* Header row */
+.container-header {
+  layout: grid;
+  grid-size: 6;
+  grid-columns: 1fr 2fr 2fr 1fr 2fr 1.8fr;
+  padding: 0 1;
+  margin: 0 0;
+  text-style: bold;
+  border-bottom: round #45475a;
+  background: #1e1e2e; /* optional background */
+}
+
+/* Base header col style */
+.container-header .col {
+  padding: 0 1;
+  content-align: left middle;
+  color: #cdd6f4;
+}
+
+/* Individual column tweaks */
+.container-header .id {
+  color: #a6adc8;          /* light purple */
+  content-align: left middle;
+}
+
+.container-header .name {
+  color: #94e2d5;          /* teal */
+  content-align: left middle;
+}
+
+.container-header .image {
+  color: #a6e3a1;          /* green */
+}
+
+.container-header .created {
+  color: #f5c2e7;          /* pink */
+  content-align: left middle;
+}
+
+.container-header .ports {
+  color: #cba6f7;          /* purple */
+  content-align: center middle;
+}
+
+.container-header .status {
+  color: #f9e2af;         /* yellow */
+  content-align: left middle;
+}
