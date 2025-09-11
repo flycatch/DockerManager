@@ -1,0 +1,12 @@
+/* Style for the standalone tab */
+#tab-uncategorized {
+    border: round #89b4fa;
+}
+
+/* Active tab styling */
+#tab-uncategorized.-active {
+    border: double blue;
+    background: blue;
+    color: white;
+}
+
