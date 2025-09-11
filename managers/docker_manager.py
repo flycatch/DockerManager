@@ -17,7 +17,10 @@ from tabs.container_tab import ContainersTab
 from tabs.project_tab import ProjectsTab
 
 class DockerManager(App):
-    CSS_PATH = "../ui.tcss"
+    CSS_PATH = ["../tcss/container_list.tcss", "../tcss/header.tcss","../tcss/project_search.tcss", 
+                "../tcss/filter.tcss", "../tcss/standalone_search.tcss",
+                "../tcss/project_tab.tcss","../tcss/shell.tcss","../tcss/logs.tcss",
+                "../tcss/screen.tcss","../tcss/standalone_tab.tcss"]
     ENABLE_COMMAND_PALETTE = False
     BINDINGS = [
         Binding("1", "goto_uncategorized", "Standalone", show=True),

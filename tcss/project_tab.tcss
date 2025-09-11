@@ -1,0 +1,55 @@
+
+/* 🧩 Compose Projects Layout */
+#projects-layout {
+  layout: horizontal;
+  border: round #585b70;
+  background: #1e1e2e;
+  height: 1fr;
+  opacity: 0.6;
+  margin: 0 0; 
+}
+
+
+#projects-layout:focus-within {
+    opacity: 1;    
+}
+/* 🌳 Compose Project Tree */
+#project-tree {
+  border: round #79879eff;
+  padding: 1 1;
+  margin: 0 0;
+  background: #1e1e2e;
+  height: 1fr;
+  overflow: auto;
+  width: 50;
+  color: #cdd6f4;
+  scrollbar-gutter: stable;
+}
+/* Highlight when focused */
+#project-tree:focus-within {
+    border: round #89b4fa;    /* active blue */
+}
+
+.tree--label {
+  padding-left: 2;
+  color: #cdd6f4;
+  text-style: bold;
+}
+
+.tree--cursor {
+  background: #313244;
+  color: #f9e2af;
+  text-style: bold reverse;
+}
+
+.tree--guides {
+  color: #7f849c;
+}
+/* Add this to your CSS */
+ProjectsTab:focus {
+    border: dashed  #89b4fa;
+}
+
+#projects-layout:focus-within {
+    border: round #89b4fa;
+}

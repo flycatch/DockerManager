@@ -1,0 +1,7 @@
+/* 🌌 Screen Layout */
+Screen {
+  align: center middle;
+  content-align: center middle;
+  background: #1e1e2e 95%;
+  padding: 0;
+}
