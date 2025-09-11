@@ -1,99 +1,160 @@
+# container_exec.py
 import asyncio
 import json
 import requests_unixsocket
 from urllib.parse import quote_plus
+from typing import Tuple
+from asyncio import StreamReader, StreamWriter
+
 
 DOCKER_SOCKET_PATH = "/var/run/docker.sock"
 
+async def check_shell_availability(container_id: str) -> bool:
+    """Check if the container has a shell available by inspecting the container."""
+    try:
+        session = requests_unixsocket.Session()
+        url = f"http+unix://{quote_plus(DOCKER_SOCKET_PATH)}/containers/{container_id}/json"
+        
+        resp = session.get(url)
+        if resp.status_code != 200:
+            return False
+            
+        container_info = resp.json()
+        
+        # Check if container is running
+        if not container_info.get("State", {}).get("Running", False):
+            return False
+            
+        # Try to find a shell in the container
+        # First check if we can execute commands directly
+        exec_url = f"http+unix://{quote_plus(DOCKER_SOCKET_PATH)}/containers/{container_id}/exec"
+        
+        # Try a simple command to see if the container responds
+        exec_config = {
+            "AttachStdout": True,
+            "AttachStderr": True,
+            "Tty": False,
+            "Cmd": ["sh", "-c", "echo 'test'"]
+        }
+        
+        exec_resp = session.post(exec_url, json=exec_config)
+        if exec_resp.status_code == 201:
+            exec_id = exec_resp.json()["Id"]
+            
+            # Try to start the exec to see if it works
+            start_url = f"http+unix://{quote_plus(DOCKER_SOCKET_PATH)}/exec/{exec_id}/start"
+            start_resp = session.post(start_url, json={"Detach": False, "Tty": False})
+            
+            # If we get a 200, the container can execute commands
+            return start_resp.status_code == 200
+            
+    except Exception as e:
+        print(f"Error checking shell availability: {e}")
+        
+    return False
+
 async def create_exec_instance(container_id: str) -> str:
-    print(f"[DEBUG] Creating exec instance for container: {container_id}")
+    """Create an exec instance in the container, trying multiple approaches."""
     session = requests_unixsocket.Session()
     url = f"http+unix://{quote_plus(DOCKER_SOCKET_PATH)}/containers/{container_id}/exec"
 
-    # Set TTY + interactive shell prompt using PS1
-    exec_config = {
-        "AttachStdin": True,
-        "AttachStdout": True,
-        "AttachStderr": True,
-        "Tty": True,
-        "Cmd": [
-            "/bin/sh",
-            "-i",
-            "-c",
-            'export PS1="\\w # "; exec /bin/sh'
-        ]
-    }
+    # Try different approaches to get a shell
+    shell_configs = [
+        # Try standard shell
+        {
+            "AttachStdin": True,
+            "AttachStdout": True,
+            "AttachStderr": True,
+            "Tty": True,
+            "Cmd": ["/bin/sh", "-i"]
+        },
+        # Try bash
+        {
+            "AttachStdin": True,
+            "AttachStdout": True,
+            "AttachStderr": True,
+            "Tty": True,
+            "Cmd": ["/bin/bash", "-i"]
+        },
+        # Try just sh
+        {
+            "AttachStdin": True,
+            "AttachStdout": True,
+            "AttachStderr": True,
+            "Tty": True,
+            "Cmd": ["sh", "-i"]
+        },
+        # Try with a simple command that might work in minimal containers
+        {
+            "AttachStdin": True,
+            "AttachStdout": True,
+            "AttachStderr": True,
+            "Tty": True,
+            "Cmd": ["/bin/sh", "-c", "exec /bin/sh"]
+        }
+    ]
 
-    print(f"[DEBUG] Exec config: {exec_config}")
-    print(f"[DEBUG] POST {url}")
-    resp = session.post(url, json=exec_config)
-    print(f"[DEBUG] Response status: {resp.status_code}")
-    resp.raise_for_status()
-    exec_id = resp.json()["Id"]
-    print(f"[DEBUG] Exec instance ID: {exec_id}")
-    return exec_id
+    for config in shell_configs:
+        try:
+            resp = session.post(url, json=config)
+            if resp.status_code in (200, 201):
+                exec_id = resp.json()["Id"]
+                return exec_id
+        except Exception:
+            continue
+            
+    # If all else fails, try a basic approach
+    try:
+        basic_config = {
+            "AttachStdin": True,
+            "AttachStdout": True,
+            "AttachStderr": True,
+            "Tty": True,
+            "Cmd": ["sh"]
+        }
+        resp = session.post(url, json=basic_config)
+        if resp.status_code in (200, 201):
+            return resp.json()["Id"]
+    except Exception:
+        pass
+        
+    raise Exception("Could not create exec instance - no shell available")
 
-async def open_docker_shell(container_id: str):
-    print(f"[DEBUG] Opening docker shell for container: {container_id}")
-    exec_id = await create_exec_instance(container_id)
-    print(f"[DEBUG] Connecting to Docker socket: {DOCKER_SOCKET_PATH}")
-    reader, writer = await asyncio.open_unix_connection(DOCKER_SOCKET_PATH)
 
-    payload = json.dumps({"Detach": False, "Tty": True})
-    request = (
-        f"POST /v1.41/exec/{exec_id}/start HTTP/1.1\r\n"
-        f"Host: localhost\r\n"
-        f"Content-Type: application/json\r\n"
-        f"Content-Length: {len(payload)}\r\n"
-        f"\r\n"
-        f"{payload}"
-    )
+async def open_docker_shell(container_id: str) -> Tuple[StreamReader, StreamWriter]:
+    """Open a shell session with a Docker container."""
+    try:
+        exec_id = await create_exec_instance(container_id)
+        reader, writer = await asyncio.open_unix_connection(DOCKER_SOCKET_PATH)
 
-    print(f"[DEBUG] Sending request to start exec instance:\n{request}")
-    writer.write(request.encode())
-    await writer.drain()
+        payload = json.dumps({"Detach": False, "Tty": True})
+        request = (
+            f"POST /v1.41/exec/{exec_id}/start HTTP/1.1\r\n"
+            f"Host: localhost\r\n"
+            f"Content-Type: application/json\r\n"
+            f"Content-Length: {len(payload)}\r\n"
+            f"\r\n"
+            f"{payload}"
+        )
 
-    # Read and skip HTTP headers
-    response_headers = b""
-    while True:
-        line = await reader.readline()
-        if line in (b'\r\n', b''):
-            break
-        response_headers += line
-    print(f"[DEBUG] Skipped response headers:\n{response_headers.decode(errors='ignore')}")
+        writer.write(request.encode())
+        await writer.drain()
 
-    print(f"[DEBUG] Shell session ready")
+        # Read and skip HTTP headers
+        while True:
+            line = await reader.readline()
+            if line in (b'\r\n', b''):
+                break
 
-    class DebugStreamReader:
-        def __init__(self, reader):
-            self._reader = reader
-
-        async def read(self, n=-1):
-            data = await self._reader.read(n)
-            print(f"[DEBUG] [READ] {len(data)} bytes: {data!r}")
-            return data
-
-        async def readline(self):
-            line = await self._reader.readline()
-            print(f"[DEBUG] [READLINE] {line!r}")
-            return line
-
-        def at_eof(self):
-            return self._reader.at_eof()
-
-    class DebugStreamWriter:
-        def __init__(self, writer):
-            self._writer = writer
-
-        def write(self, data):
-            print(f"[DEBUG] [WRITE] {len(data)} bytes: {data!r}")
-            return self._writer.write(data)
-
-        async def drain(self):
-            await self._writer.drain()
-
-        def close(self):
-            print(f"[DEBUG] [CLOSE] Writer closed")
-            self._writer.close()
-
-    return DebugStreamReader(reader), DebugStreamWriter(writer)
+        return reader, writer
+        
+    except Exception as e:
+        # Provide more helpful error messages
+        if "no such file or directory" in str(e).lower():
+            raise Exception("No shell available in this container")
+        elif "container not found" in str(e).lower():
+            raise Exception("Container not found")
+        elif "is not running" in str(e).lower():
+            raise Exception("Container is not running")
+        else:
+            raise Exception(f"Failed to connect to container: {str(e)}")
