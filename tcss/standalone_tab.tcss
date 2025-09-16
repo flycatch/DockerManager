@@ -1,3 +1,15 @@
+/*
+ * standalone_tab.tcss
+ * Styles for the standalone containers tab in Docker Manager TUI.
+ * 
+ * This stylesheet defines:
+ * - Tab border and background styling
+ * - Active state highlighting
+ * - Color scheme for selected state
+ * - Visual indicators for current tab
+ * - Consistent border radius and colors
+ */
+
 /* Style for the standalone tab */
 #tab-uncategorized {
     border: round #89b4fa;

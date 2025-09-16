@@ -18,6 +18,21 @@ from tabs.project_tab import ProjectsTab
 from cards.container_header import ContainerHeader
 
 class DockerManager(App):
+    """Main application class for the Docker Manager TUI.
+    
+    This class provides a terminal user interface for managing Docker containers and services.
+    It includes features for:
+    - Viewing and managing standalone containers
+    - Managing Docker Compose services
+    - Container operations (start, stop, delete)
+    - Container logs and shell access
+    - Real-time status updates
+    
+    The UI is divided into two main tabs:
+    1. Standalone (🟡): For managing individual containers
+    2. Services (🟢): For managing Docker Compose services and their containers
+    """
+    
     CSS_PATH = ["../tcss/container_list.tcss", "../tcss/header.tcss","../tcss/project_search.tcss", 
                 "../tcss/filter.tcss", "../tcss/standalone_search.tcss",
                 "../tcss/project_tab.tcss","../tcss/shell.tcss","../tcss/logs.tcss",
@@ -31,6 +46,18 @@ class DockerManager(App):
     ]
 
     def __init__(self):
+        """Initialize the DockerManager application.
+        
+        Sets up the initial state including:
+        - Container card mappings for both services and standalone containers
+        - Project data structures for Docker Compose services
+        - State tracking for UI focus and refresh operations
+        
+        The manager maintains separate dictionaries for:
+        - Service containers (self.cards)
+        - Standalone containers (self.uncategorized_cards)
+        - Project metadata (self.projects)
+        """
         super().__init__()
         self.cards: Dict[str, ContainerCard] = {}
         self.uncategorized_cards: Dict[str, ContainerCard] = {}
@@ -41,6 +68,21 @@ class DockerManager(App):
         self._last_containers: dict[str, tuple[str, str, str, str]] = {}
 
     def compose(self) -> ComposeResult:
+        """Compose the application's user interface layout.
+        
+        Creates a tabbed interface with two main sections:
+        1. Standalone Containers (🟡):
+           - List of individual containers
+           - Search and filter capabilities
+           
+        2. Services (🟢):
+           - Tree view of Docker Compose projects
+           - Container list for the selected project
+           - Project and container headers
+        
+        Returns:
+            ComposeResult: The composed widget hierarchy for the application
+        """
         tabbed_content = TabbedContent()
         self.tabbed_content = tabbed_content
         with tabbed_content:
@@ -144,6 +186,21 @@ class DockerManager(App):
         self.run_worker(self.refresh_projects, exclusive=True, group="refresh")
 
     async def refresh_projects(self):
+        """Refresh the projects and containers view asynchronously.
+        
+        This method performs a full refresh of both standalone containers and Docker Compose projects:
+        1. Retrieves latest container and project data
+        2. Optimizes updates by comparing with previous state
+        3. Updates container statuses if only status changes are detected
+        4. Performs full UI rebuild if container membership or projects changed
+        5. Maintains selection and focus state during refresh
+        
+        The method uses a two-stage refresh strategy:
+        - Fast path: Only update statuses if container set is unchanged
+        - Full sync: Rebuild UI components if container set or projects changed
+        
+        Thread-safe with built-in reentrance protection.
+        """
         if self._refreshing:
             return
         self._refreshing = True
@@ -220,10 +277,27 @@ class DockerManager(App):
     # In the sync_card_list method, update the parameter type and unpacking
     async def sync_card_list(
         self,
-        container_data: list[tuple[int, str, str, str, str, str, str]],  # Changed to list
+        container_data: list[tuple[int, str, str, str, str, str, str]],
         container_map: dict[str, ContainerCard],
         mount_target: Vertical
     ):
+        """Synchronize the container cards UI with the current container state.
+        
+        Args:
+            container_data: List of container information tuples containing:
+                          (index, container_id, name, image, status, ports, created)
+            container_map: Dictionary mapping container IDs to their ContainerCard widgets
+            mount_target: The Vertical layout widget to mount new cards into
+            
+        This method efficiently updates the UI by:
+        1. Removing cards for containers that no longer exist
+        2. Updating status for existing containers
+        3. Creating new cards for new containers
+        4. Maintaining focus and selection state
+        
+        The method uses diff-based updates to minimize UI rebuilds and 
+        preserve application responsiveness.
+        """
         current_focused = self.screen.focused
         focused_id = getattr(current_focused, 'container_id', None) if (current_focused and isinstance(current_focused, ContainerCard)) else None
         

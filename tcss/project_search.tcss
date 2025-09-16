@@ -1,3 +1,15 @@
+/*
+ * project_search.tcss 
+ * Styles for the project search functionality in Docker Manager TUI.
+ * 
+ * This stylesheet defines:
+ * - Search input field appearance and positioning
+ * - Active search state visibility and styling
+ * - Overlay behavior and layering
+ * - Consistent dimensions and spacing
+ * - Integration with Catppuccin Mocha theme
+ */
+
 /* Project search input */
 #project-search {
     display: none;                  /* hidden by default */

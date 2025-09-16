@@ -1,4 +1,16 @@
 
+/*
+ * shell.tcss
+ * Styles for the interactive shell interface in Docker Manager TUI.
+ * 
+ * This stylesheet defines:
+ * - Shell container dimensions and overflow handling
+ * - Terminal text colors and formatting
+ * - Custom scrollbar styling
+ * - Input/output area layout
+ * - Command prompt appearance
+ */
+
 /* 🖥️ Shell Container */
 .shell-container {
   height: 1fr;

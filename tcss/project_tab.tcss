@@ -1,4 +1,16 @@
 
+/*
+ * project_tab.tcss
+ * Styles for the Docker Compose projects view in Docker Manager TUI.
+ * 
+ * This stylesheet defines:
+ * - Project list layout and tree structure
+ * - Focus states and opacity transitions
+ * - Project node styling and indentation
+ * - Selection highlighting
+ * - Container section layout within projects
+ */
+
 /* 🧩 Compose Projects Layout */
 #projects-layout {
   layout: horizontal;

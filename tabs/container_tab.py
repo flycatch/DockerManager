@@ -10,7 +10,22 @@ from container_action_menu import ContainerActionScreen
 from cards.container_header import ContainerHeader
 
 class ContainersTab(Vertical, can_focus=True):
-    """Container for All Containers tab with its own key bindings."""
+    """A container view for Docker containers with filtering and search.
+    
+    This widget provides a scrollable, filterable list of Docker containers with:
+    - Search functionality for container name/image/status
+    - Filter dropdown for container status
+    - Keyboard navigation
+    - Container action menu integration
+    - Responsive status updates
+    
+    Key Bindings:
+    - down/up: Navigate containers
+    - enter: Open container actions menu
+    - /: Focus search
+    - f: Toggle filter dropdown
+    - escape: Clear search/filter
+    """
     BINDINGS = [
         Binding("down", "focus_next", "Next", show=True),
         Binding("up", "focus_previous", "Previous", show=True),
@@ -21,16 +36,44 @@ class ContainersTab(Vertical, can_focus=True):
     ]
 
     def __init__(self, *, id: str | None = None):
+        """Initialize the containers tab.
+        
+        Args:
+            id: Optional widget ID for styling/querying
+            
+        The tab maintains state for:
+        - Current selection index
+        - Search activation status
+        - Filter activation status
+        - Input field references
+        - No-results message handling
+        
+        Uses Textual's reactive system for UI state management.
+        """
         super().__init__(id=id)
         self.selected_index: int = 0
         self.search_active = reactive(False)
         self.filter_active = reactive(False)
         self.search_input: Optional[Input] = None
         self.filter_dropdown: Optional[Select] = None
-        self.no_results_message: Optional[Static] = None  # Add this line
+        self.no_results_message: Optional[Static] = None
 
 
     def compose(self) -> ComposeResult:
+        """Compose the tab's widget hierarchy.
+        
+        Returns:
+            ComposeResult: The composed widget tree
+        
+        Creates a layout with:
+        1. Search input field (initially hidden)
+        2. Container list header
+        3. Filter dropdown (initially hidden)
+        4. Container cards section
+        
+        The layout is designed to be responsive and maintain proper
+        focus order for keyboard navigation.
+        """
         # search input
         self.search_input = Input(
             placeholder="Search containers (name, image, status)...",
