@@ -1,4 +1,27 @@
 # container_exec.py
+"""Docker container shell execution module.
+
+This module provides functionality for interacting with Docker containers through shell sessions.
+It handles:
+- Shell availability checking in containers
+- Creating and managing exec instances
+- Establishing interactive shell sessions
+- Error handling and fallback mechanisms
+
+The module uses Unix socket communication with the Docker daemon and supports
+various shell types (sh, bash) with fallback mechanisms for minimal containers.
+"""
+
+import asyncio
+import json
+import requests_unixsocket
+from urllib.parse import quote_plus
+from typing import Tuple
+from asyncio import StreamReader, StreamWriter
+
+
+DOCKER_SOCKET_PATH = "/var/run/docker.sock"
+
 import asyncio
 import json
 import requests_unixsocket
@@ -10,7 +33,19 @@ from asyncio import StreamReader, StreamWriter
 DOCKER_SOCKET_PATH = "/var/run/docker.sock"
 
 async def check_shell_availability(container_id: str) -> bool:
-    """Check if the container has a shell available by inspecting the container."""
+    """Check if a container has a shell available.
+    
+    Args:
+        container_id: Docker container ID or name
+        
+    Returns:
+        bool: True if shell is available, False otherwise
+        
+    This function verifies shell availability by:
+    1. Checking if container exists and is running
+    2. Attempting a test command execution
+    3. Validating command execution works properly
+    """
     try:
         session = requests_unixsocket.Session()
         url = f"http+unix://{quote_plus(DOCKER_SOCKET_PATH)}/containers/{container_id}/json"
@@ -54,7 +89,23 @@ async def check_shell_availability(container_id: str) -> bool:
     return False
 
 async def create_exec_instance(container_id: str) -> str:
-    """Create an exec instance in the container, trying multiple approaches."""
+    """Create an exec instance in the container with shell access.
+    
+    Args:
+        container_id: Docker container ID or name
+        
+    Returns:
+        str: Exec instance ID for the created shell session
+        
+    Raises:
+        Exception: If no shell could be created in the container
+        
+    The function tries multiple shell types in sequence:
+    1. Standard shell (/bin/sh -i)
+    2. Bash shell (/bin/bash -i)
+    3. Basic sh (sh -i)
+    4. Fallback minimal shell execution
+    """
     session = requests_unixsocket.Session()
     url = f"http+unix://{quote_plus(DOCKER_SOCKET_PATH)}/containers/{container_id}/exec"
 
@@ -122,7 +173,23 @@ async def create_exec_instance(container_id: str) -> str:
 
 
 async def open_docker_shell(container_id: str) -> Tuple[StreamReader, StreamWriter]:
-    """Open a shell session with a Docker container."""
+    """Open an interactive shell session with a Docker container.
+    
+    Args:
+        container_id: Docker container ID or name
+        
+    Returns:
+        tuple: StreamReader and StreamWriter for shell I/O
+        
+    Raises:
+        Exception: With descriptive message if shell connection fails
+        
+    This function:
+    1. Creates an exec instance for shell access
+    2. Establishes bidirectional connection
+    3. Sets up proper TTY handling
+    4. Provides detailed error messages on failure
+    """
     try:
         exec_id = await create_exec_instance(container_id)
         reader, writer = await asyncio.open_unix_connection(DOCKER_SOCKET_PATH)

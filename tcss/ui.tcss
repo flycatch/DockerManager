@@ -1,5 +1,29 @@
 
 
+/*
+ * ui.tcss
+ * Main UI styles for the Docker Manager TUI application.
+ * 
+ * This comprehensive stylesheet defines the core visual elements:
+ * - Container list and card layouts
+ * - Modal dialogs and menus
+ * - Project tree and tab styles
+ * - Shell and log views
+ * - Search and filter components
+ * 
+ * Color Scheme:
+ * Based on Catppuccin Mocha with semantic colors for:
+ * - Status indicators (running: success, stopped: error)
+ * - Interactive elements (focus, hover states)
+ * - Text hierarchy (headers, content, metadata)
+ * 
+ * Layout Components:
+ * - Grid-based container cards
+ * - Vertical/horizontal layouts
+ * - Responsive spacing
+ * - Consistent border styling
+ */
+
 /* 📦 Container List */
 #container-list {
   margin: 0 0;

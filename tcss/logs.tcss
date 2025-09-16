@@ -1,4 +1,16 @@
 
+/*
+ * logs.tcss
+ * Styles for the container logs view in Docker Manager TUI.
+ * 
+ * This stylesheet defines:
+ * - Log container layout and scrolling behavior
+ * - Filter input field styling
+ * - Log output text formatting
+ * - Scrollbar customization
+ * - Search highlight colors
+ */
+
 /* 🔍 Input Field Base */
 .menu-input,
 #log-filter {

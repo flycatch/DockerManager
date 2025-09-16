@@ -1,4 +1,16 @@
 
+/*
+ * filter.tcss
+ * Styles for filter dropdowns and options in Docker Manager TUI.
+ * 
+ * This stylesheet defines:
+ * - Filter dropdown positioning and visibility
+ * - Option list styling and hover states
+ * - Selected item highlighting
+ * - Focus indicators and borders
+ * - Overlay layer management
+ */
+
 /* 🎛 Floating Filter Dropdown */
 #filter-dropdown {
   dock: bottom;

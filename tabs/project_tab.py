@@ -13,7 +13,25 @@ from service import (
 
 
 class ProjectsTab(Horizontal, can_focus=True):
-    """Container for Compose Projects tab with its own key bindings."""
+    """A tab for managing Docker Compose projects and their containers.
+    
+    This widget provides a comprehensive interface for Docker Compose projects:
+    - Project list with container details
+    - Project-wide operations (start/stop/restart/delete)
+    - Search functionality
+    - Keyboard navigation
+    - Project state management
+    
+    Key Bindings:
+    - down/up: Navigate projects
+    - enter: Open project actions menu
+    - u: Start project
+    - o: Stop project
+    - r: Restart project
+    - x: Delete project
+    - /: Focus search
+    - escape: Clear search
+    """
     BINDINGS = [
         Binding("down", "focus_next", "Next", show=True),
         Binding("up", "focus_previous", "Previous", show=True),
@@ -27,6 +45,20 @@ class ProjectsTab(Horizontal, can_focus=True):
     ]
     
     def __init__(self, *, id: str | None = None):
+        """Initialize the projects tab.
+        
+        Args:
+            id: Optional widget ID for styling/querying
+            
+        The tab maintains state for:
+        - Current project selection index
+        - Search activation status
+        - Input field references
+        - No-results message handling
+        
+        Uses Textual's reactive system for UI state management
+        to handle search visibility and project filtering.
+        """
         super().__init__(id=id)
         self.selected_index: int = 0
         self.search_active = reactive(False)
@@ -34,6 +66,21 @@ class ProjectsTab(Horizontal, can_focus=True):
         self.no_results_message: Optional[Static] = None
 
     def compose(self) -> ComposeResult:
+        """Compose the tab's widget hierarchy.
+        
+        Returns:
+            ComposeResult: The composed widget tree
+            
+        Creates a layout with:
+        1. Search input field (initially hidden)
+        2. Project tree
+        3. No-results message (initially hidden)
+        
+        Layout Notes:
+        - Search input appears above tree due to mount order
+        - Hidden elements managed by reactive properties
+        - Maintains focus order for keyboard navigation
+        """
         # Search input (hidden by default). Because DockerManager mounts the Tree
         # as a child of this ProjectsTab, the Input will appear above the Tree.
         self.search_input = Input(

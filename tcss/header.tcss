@@ -1,3 +1,15 @@
+/*
+ * header.tcss
+ * Styles for the container list header in the Docker Manager TUI.
+ * 
+ * This stylesheet defines:
+ * - Grid-based header layout with 6 columns
+ * - Column alignment and spacing
+ * - Border and background styling
+ * - Text formatting for header labels
+ * - Consistent color scheme with Catppuccin Mocha
+ */
+
 /* 🔠 Container Header */
 .container-header {
   layout: grid;
