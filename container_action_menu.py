@@ -45,14 +45,15 @@ def expand_tabs(text: str, tab_width: int = TAB_WIDTH) -> str:
 def _convert_ansi_to_textual(ansi_code: str) -> str:
     """Convert ANSI color codes to Textual markup."""
     if not ansi_code:
-        return "[/]"
+        return ""
     codes = ansi_code.split(';')
     textual_tags = []
     i = 0
     while i < len(codes):
         code = codes[i]
         if code == '0':
-            textual_tags.append("[/]")
+            # Reset all formatting
+            return "[/]"
         elif code == '1':
             textual_tags.append("[bold]")
         elif code == '3':
@@ -72,32 +73,44 @@ def _convert_ansi_to_textual(ansi_code: str) -> str:
             }
             textual_tags.append(f"[{color_map[code]}]")
         i += 1
-    return ''.join(textual_tags)
+    return ''.join(textual_tags) if textual_tags else ""
 
 
 def strip_vt100(text: str) -> str:
     """Remove VT100 escape sequences but preserve some formatting."""
-    text = re.sub(r'\x1B\[[0-9;]*[Hf]', '', text)  # cursor pos
-    text = re.sub(r'\x1B\[[0-9;]*[JK]', '', text)  # erase display
-    text = re.sub(r'\x1B\[[0-9;]*[ABCD]', '', text)  # cursor move
-    text = re.sub(r'\x1B\[[0-9;]*[su]', '', text)  # save/restore
-    # Convert ANSI colors
+    # First remove all non-color escape sequences
+    text = re.sub(r'\x1B[^m]*[a-zA-Z]', '', text)  # Remove all non-color sequences
+    text = re.sub(r'\x1B=', '', text)  # Remove specific sequences like \x1B=
+    
+    # Handle color sequences carefully
     text = re.sub(r'\x1B\[([0-9;]*)m',
                   lambda m: _convert_ansi_to_textual(m.group(1)),
                   text)
+    
+    # Clean up any remaining escape sequences
+    text = re.sub(r'\x1B[^[]*\[[^m]*[a-ln-zA-Z]', '', text)
     return text
 
 class ContainerActionScreen(ModalScreen):
-    BINDINGS: List[BindingType] = [
+    COMMON_BINDINGS: List[BindingType] = [
+        Binding("left", "switch_tab('Logs')", "Logs Tab"),
+        Binding("right", "switch_tab('Terminal')", "Shell Tab"),
+        Binding("escape", "handle_escape", "Close", key_display="ESC"),
+    ]
+    
+    LOGS_BINDINGS: List[BindingType] = COMMON_BINDINGS + [
+        Binding("/", "focus_filter", "Filter Logs"),
         Binding("s", "do_action('start')", "Start"),
         Binding("p", "do_action('stop')", "Stop"),
         Binding("d", "do_action('delete')", "Delete"),
-        Binding("left", "switch_tab('Logs')", "Logs Tab"),
-        Binding("right", "switch_tab('Terminal')", "Shell Tab"),
-        Binding("/", "focus_filter", "Filter Logs"),
-        Binding("ctrl+l", "clear_shell", "Clear Shell"),
-        Binding("escape", "handle_escape", "Close", key_display="ESC"),
     ]
+    
+    TERMINAL_BINDINGS: List[BindingType] = COMMON_BINDINGS + [
+        Binding("ctrl+l", "clear_shell", "Clear Shell"),
+    ]
+
+    # Start with logs bindings since Logs is the default tab
+    BINDINGS: List[BindingType] = LOGS_BINDINGS.copy()
 
     class Selected(Message):
         def __init__(self, action: str, container_id: str):
@@ -122,6 +135,7 @@ class ContainerActionScreen(ModalScreen):
         self.shell_task = None
         self.shell_available = False
         self.shell_checked = False
+        self.active_tab = "Logs"
 
     def compose(self):
         with TabbedContent():
@@ -147,7 +161,7 @@ class ContainerActionScreen(ModalScreen):
     async def on_mount(self):
         self.set_focus(None)
         self.keep_streaming = True
-        self.log_update_timer = self.set_interval(0.5, self.update_logs, name="log_ui")
+        self.log_update_timer = self.set_interval(0.5, self.refresh_logs, name="log_ui")
         self.log_worker = self.run_worker(self.stream_logs, group="logs", thread=True)
         # Check if shell is available in the container
         self.check_shell_availability()
@@ -215,8 +229,26 @@ class ContainerActionScreen(ModalScreen):
             self.shell_task.cancel()
 
     def on_key(self, event: Key) -> None:
+        """Handle key press events."""
+        # Get the active tab
+        active_tab = self.query_one(TabbedContent).active
+
+        # Handle tab-specific keyboard shortcuts
+        if event.key == "/" and active_tab == "Logs":
+            # Filter shortcut only in Logs tab
+            event.prevent_default()
+            self.action_focus_filter()
+            return
+
+        if event.key == "ctrl+l" and active_tab == "Terminal":
+            # Clear shortcut only in Terminal tab
+            event.prevent_default()
+            self.action_clear_shell()
+            return
+
+        # Handle shell input only in Terminal tab
         shell_input = self.query_one("#shell-input", Input)
-        if shell_input.has_focus and not shell_input.disabled:
+        if active_tab == "Terminal" and shell_input.has_focus and not shell_input.disabled:
             if event.key == "up":
                 event.prevent_default()
                 if self.command_history and self.history_index > 0:
@@ -235,7 +267,7 @@ class ContainerActionScreen(ModalScreen):
                     shell_input.value = ""
             elif event.key == "tab":
                 event.prevent_default()
-                # Basic tab completion - would need more sophisticated implementation
+                # Basic tab completion
                 current_input = shell_input.value
                 if current_input and not current_input.isspace():
                     # Simple example: complete to common commands
@@ -247,40 +279,48 @@ class ContainerActionScreen(ModalScreen):
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle user input commands."""
-        command = event.value.strip()
-        input_widget = event.input
-        input_widget.value = ""  # clear input box
+        try:
+            command = event.value.strip()
+            input_widget = event.input
+            input_widget.value = ""  # clear input box
 
-        if not command:
-            return
-
-        # Reconnect if shell is closed
-        if not self.shell_writer or self.shell_writer.is_closing():
-            self.shell_lines.append("[yellow]Reconnecting shell...[/yellow]\n")
-            self.query_one("#shell-output", Static).update("".join(self.shell_lines[-1000:]))
-            try:
-                self.shell_reader, self.shell_writer = await open_docker_shell(self.container_id)
-                self.shell_lines.append(PROMPT)
-                asyncio.create_task(self.read_shell_output())
-            except Exception as e:
-                self.shell_lines.append(f"[red]Failed to reconnect: {e}[/red]\n")
-                self.query_one("#shell-output", Static).update("".join(self.shell_lines[-1000:]))
+            if not command:
                 return
 
-        # Show command in terminal above prompt
-        self.shell_lines.insert(-1, command + "\n")
-        self.query_one("#shell-output", Static).update("".join(self.shell_lines[-1000:]))
+            # Reconnect if shell is closed
+            if not self.shell_writer or self.shell_writer.is_closing():
+                self.shell_lines.append("[yellow]Reconnecting shell...[/yellow]\n")
+                self.query_one("#shell-output", Static).update("".join(self.shell_lines[-1000:]))
+                try:
+                    self.shell_reader, self.shell_writer = await open_docker_shell(self.container_id)
+                    self.shell_lines.append(PROMPT)
+                    asyncio.create_task(self.read_shell_output())
+                except Exception as e:
+                    self.shell_lines.append(f"[red]Failed to reconnect: {e}[/red]\n")
+                    self.query_one("#shell-output", Static).update("".join(self.shell_lines[-1000:]))
+                    return
 
-        # Send command to container shell
-        try:
-            self.shell_writer.write((command + "\n").encode())
+            # Send clear command first
+            self.shell_writer.write(("clear\n").encode())
             await self.shell_writer.drain()
-            self.command_history.append(command)
-            self.history_index = -1
-        except Exception as e:
-            self.shell_lines.insert(-1, f"[red]Error sending command: {e}[/red]\n")
-            self.query_one("#shell-output", Static).update("".join(self.shell_lines[-1000:]))
+            
+            # Clear the terminal UI
+            self.shell_lines.clear()
+            self.shell_lines.append(f"{command}\n")  # Show the command at top
+            self.shell_lines.append(PROMPT)
+            self.query_one("#shell-output", Static).update("".join(self.shell_lines))
 
+            # Send the actual command
+            try:
+                self.shell_writer.write((command + "\n").encode())
+                await self.shell_writer.drain()
+                self.command_history.append(command)
+                self.history_index = -1
+            except Exception as e:
+                self.shell_lines.insert(-1, f"[red]Error sending command: {e}[/red]\n")
+                self.query_one("#shell-output", Static).update("".join(self.shell_lines[-1000:]))
+        except Exception as e:
+            pass
 
     def action_handle_escape(self) -> None:
         """Two-stage Escape behavior:
@@ -301,16 +341,25 @@ class ContainerActionScreen(ModalScreen):
         # Stage 2: If no input is focused, close screen
         self.app.pop_screen()
 
-    def action_focus_filter(self):
-        self.query_one("#log-filter", Input).remove_class("hidden")
-        self.set_focus(self.query_one("#log-filter", Input))
+    def action_focus_filter(self) -> None:
+        """Focus the filter input only in Logs tab."""
+        if self.query_one(TabbedContent).active == "Logs":
+            filter_input = self.query_one("#log-filter", Input)
+            filter_input.remove_class("hidden")
+            self.set_focus(filter_input)
 
-    def action_clear_shell(self):
-        self.shell_lines.clear()
-        self.query_one("#shell-output", Static).update("")
+    def action_clear_shell(self) -> None:
+        """Clear the terminal only in Terminal tab."""
+        if self.query_one(TabbedContent).active == "Terminal":
+            self.shell_lines.clear()
+            self.query_one("#shell-output", Static).update("")
 
-    def update_logs(self):
-        self.refresh_logs()
+    async def on_input_changed(self, event: Input.Changed) -> None:
+        """Handle input changes for filter and shell."""
+        if event.input.id == "log-filter":
+            # Update filter text and refresh logs
+            self.filter_text = event.value.lower()
+            self.refresh_logs()
 
     def refresh_logs(self):
         scroll_view = self.query_one("#log-scroll", VerticalScroll)
@@ -345,6 +394,10 @@ class ContainerActionScreen(ModalScreen):
             buffer = ""
             output_widget = self.query_one("#shell-output", Static)
             scroll_view = self.query_one("#shell-scroll", VerticalScroll)
+            
+            # Track if we're in a real-time updating command
+            is_realtime_cmd = False
+            realtime_output = []
 
             while self.shell_reader and not self.shell_reader.at_eof():
                 data = await self.shell_reader.read(1024)
@@ -354,6 +407,13 @@ class ContainerActionScreen(ModalScreen):
                 decoded = data.decode(errors="ignore")
                 buffer += decoded
 
+                # Check for real-time updating commands (those using cursor movement)
+                if "\x1B[H" in buffer or "\x1B[2J" in buffer:  # Clear screen or cursor home sequences
+                    is_realtime_cmd = True
+                    realtime_output = []
+                    buffer = buffer.replace("\x1B[H", "").replace("\x1B[2J", "")
+
+                # Process the buffer
                 while "\n" in buffer or "\r" in buffer:
                     if "\r\n" in buffer:
                         line, buffer = buffer.split("\r\n", 1)
@@ -374,17 +434,26 @@ class ContainerActionScreen(ModalScreen):
                     if self.command_history and clean_line.strip() == self.command_history[-1]:
                         continue
 
-                    # Insert output above the prompt
-                    if clean_line.strip():
-                        self.shell_lines.insert(-1, clean_line + line_end)
+                    if is_realtime_cmd:
+                        realtime_output.append(clean_line + line_end)
                     else:
-                        self.shell_lines.insert(-1, line_end)
+                        # Insert output above the prompt
+                        if clean_line.strip():
+                            self.shell_lines.insert(-1, clean_line + line_end)
+                        else:
+                            self.shell_lines.insert(-1, line_end)
 
-                    # Auto-scroll
-                    at_bottom = scroll_view.scroll_y + scroll_view.size.height >= scroll_view.virtual_size.height - 1
-                    output_widget.update("".join(self.shell_lines[-1000:]))
-                    if at_bottom:
-                        scroll_view.scroll_end(animate=False)
+                    # Update the display
+                    if is_realtime_cmd:
+                        # For real-time commands, replace the entire output
+                        self.shell_lines = realtime_output + [PROMPT]
+                        output_widget.update("".join(self.shell_lines))
+                    else:
+                        # For normal commands, append and scroll
+                        at_bottom = scroll_view.scroll_y + scroll_view.size.height >= scroll_view.virtual_size.height - 1
+                        output_widget.update("".join(self.shell_lines[-1000:]))
+                        if at_bottom:
+                            scroll_view.scroll_end(animate=False)
 
             # Append remaining buffer
             if buffer.strip():
@@ -442,6 +511,17 @@ class ContainerActionScreen(ModalScreen):
 
 
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
+        """Handle tab activation."""
+        if event.tab.id:
+            self.active_tab = event.tab.id
+            # Switch bindings based on active tab
+            if event.tab.id == "Terminal":
+                self.__class__.BINDINGS = self.TERMINAL_BINDINGS
+            else:
+                self.__class__.BINDINGS = self.LOGS_BINDINGS
+            # Trigger bindings update
+            self.notify_bindings_change()
+
         if event.tab.id == "Terminal":
             # Update UI based on shell availability
             if self.shell_checked:
@@ -452,14 +532,14 @@ class ContainerActionScreen(ModalScreen):
             # Remove focus from inputs when switching to other tabs
             self.set_focus(None)
 
+    def notify_bindings_change(self) -> None:
+        """Trigger a bindings update to show or hide tab-specific bindings."""
+        footer = self.query_one(Footer)
+        if footer:
+            footer.refresh(layout=True)
+
     def action_do_action(self, action_name: str):
         self.post_message(self.Selected(action_name, self.container_id))
-        self.app.pop_screen()
-
-    def action_pop_screen(self) -> None:
-        if len(self.app.screen_stack) > 1:
-            parent_screen = self.app.screen_stack[-2]
-            parent_screen.disabled = False
         self.app.pop_screen()
 
     def action_switch_tab(self, tab: str) -> None:
