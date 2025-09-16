@@ -1,4 +1,14 @@
 
+/*
+ * container_list.tcss
+ * Styles for the container list view and container cards in the Docker Manager TUI.
+ * 
+ * This stylesheet defines:
+ * - Container list layout and scrolling behavior
+ * - Container card grid layout and styling
+ * - Focus and hover states for interactive elements
+ * - Color scheme using Catppuccin Mocha palette
+ */
 
 /* 📦 Container List */
 #container-list {

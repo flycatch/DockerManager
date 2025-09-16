@@ -12,7 +12,14 @@ from container_exec import open_docker_shell, check_shell_availability
 
 
 async def _safe_close(writer: Optional[asyncio.StreamWriter]) -> None:
-    """Safely close a StreamWriter if it exists."""
+    """Safely close a StreamWriter if it exists.
+    
+    Args:
+        writer: The StreamWriter to close. Can be None.
+        
+    This is a helper function that handles the safe closing of a StreamWriter,
+    ensuring proper cleanup even if the writer is None or closing fails.
+    """
     if writer:
         try:
             writer.close()
@@ -25,7 +32,18 @@ TAB_WIDTH = 8
 PROMPT = "$ "
 
 def expand_tabs(text: str, tab_width: int = TAB_WIDTH) -> str:
-    """Expand tabs to spaces with proper tab stops."""
+    """Expand tabs to spaces with proper tab stops.
+    
+    Args:
+        text: The input text containing tabs to expand
+        tab_width: The number of spaces each tab should be expanded to. Defaults to TAB_WIDTH (8)
+        
+    Returns:
+        str: The text with all tabs expanded to spaces, maintaining proper alignment
+        
+    This function replaces all tab characters with the appropriate number of spaces,
+    taking into account the current column position to maintain proper alignment.
+    """
     result = []
     for line in text.split('\n'):
         expanded_line = []
@@ -43,7 +61,24 @@ def expand_tabs(text: str, tab_width: int = TAB_WIDTH) -> str:
 
 
 def _convert_ansi_to_textual(ansi_code: str) -> str:
-    """Convert ANSI color codes to Textual markup."""
+    """Convert ANSI color codes to Textual markup.
+    
+    Args:
+        ansi_code: The ANSI escape code string to convert (without the escape sequence prefix)
+        
+    Returns:
+        str: The equivalent Textual markup tags for the given ANSI code
+        
+    Supports:
+    - Basic formatting (bold, dim, underline)
+    - Foreground colors (30-37)
+    - Background colors (40-47)
+    - Reset code (0)
+    
+    Example:
+        '31;1' -> '[red][bold]'
+        '0' -> '[/]'
+    """
     if not ansi_code:
         return ""
     codes = ansi_code.split(';')
@@ -77,7 +112,23 @@ def _convert_ansi_to_textual(ansi_code: str) -> str:
 
 
 def strip_vt100(text: str) -> str:
-    """Remove VT100 escape sequences but preserve some formatting."""
+    """Remove VT100 escape sequences but preserve some formatting.
+    
+    Args:
+        text: The input text containing VT100 escape sequences
+        
+    Returns:
+        str: Text with VT100 sequences converted to Textual markup
+        
+    This function handles:
+    - Removal of non-color escape sequences
+    - Conversion of color sequences to Textual markup
+    - Preservation of important formatting while removing unwanted control sequences
+    - Special handling for color combinations and text attributes
+    
+    Example:
+        '\x1B[31mError\x1B[0m' -> '[red]Error[/]'
+    """
     # First remove all non-color escape sequences
     text = re.sub(r'\x1B[^m]*[a-zA-Z]', '', text)  # Remove all non-color sequences
     text = re.sub(r'\x1B=', '', text)  # Remove specific sequences like \x1B=
@@ -113,6 +164,15 @@ class ContainerActionScreen(ModalScreen):
     BINDINGS: List[BindingType] = LOGS_BINDINGS.copy()
 
     class Selected(Message):
+        """Message emitted when a container action is selected.
+        
+        This message is sent when the user selects an action (start/stop/delete)
+        to be performed on the container.
+        
+        Attributes:
+            action: The name of the action to perform ('start', 'stop', or 'delete')
+            container_id: The ID of the container to perform the action on
+        """
         def __init__(self, action: str, container_id: str):
             self.action = action
             self.container_id = container_id
@@ -138,6 +198,19 @@ class ContainerActionScreen(ModalScreen):
         self.active_tab = "Logs"
 
     def compose(self):
+        """Compose the UI layout of the container action screen.
+        
+        Creates a tabbed interface with two tabs:
+        1. Logs Tab:
+           - Log output area with scrolling
+           - Filter input (hidden by default)
+           
+        2. Terminal Tab:
+           - Shell output area with scrolling
+           - Shell input field
+        
+        Also adds a footer with keybindings.
+        """
         with TabbedContent():
             with TabPane("Logs", id="Logs"):
                 with VerticalScroll(id="log-scroll", classes="log-container"):
@@ -159,6 +232,14 @@ class ContainerActionScreen(ModalScreen):
         yield Footer()
 
     async def on_mount(self):
+        """Initialize the screen on mounting.
+        
+        This method:
+        1. Clears any focus
+        2. Starts the log streaming
+        3. Sets up periodic log UI updates
+        4. Checks shell availability
+        """
         self.set_focus(None)
         self.keep_streaming = True
         self.log_update_timer = self.set_interval(0.5, self.refresh_logs, name="log_ui")
@@ -229,7 +310,20 @@ class ContainerActionScreen(ModalScreen):
             self.shell_task.cancel()
 
     def on_key(self, event: Key) -> None:
-        """Handle key press events."""
+        """Handle key press events.
+        
+        Args:
+            event: The key event containing the pressed key information
+        
+        This method handles:
+        1. Tab-specific shortcuts:
+           - '/' for filtering logs (Logs tab only)
+           - 'ctrl+l' for clearing shell (Terminal tab only)
+        2. Shell command history navigation (up/down keys)
+        3. Basic command completion (tab key)
+        
+        The behavior changes based on the active tab and input focus.
+        """
         # Get the active tab
         active_tab = self.query_one(TabbedContent).active
 
@@ -278,7 +372,21 @@ class ContainerActionScreen(ModalScreen):
                             break
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Handle user input commands."""
+        """Handle submitted shell commands.
+        
+        Args:
+            event: The submission event containing the command text
+            
+        This method:
+        1. Handles shell reconnection if needed
+        2. Clears the terminal UI
+        3. Sends the command to the shell
+        4. Updates command history
+        5. Handles any errors during command execution
+        
+        The terminal is automatically cleared before each command to maintain
+        a clean view of command output.
+        """
         try:
             command = event.value.strip()
             input_widget = event.input
@@ -362,6 +470,15 @@ class ContainerActionScreen(ModalScreen):
             self.refresh_logs()
 
     def refresh_logs(self):
+        """Update the logs display with filtered and colorized content.
+        
+        This method:
+        1. Applies the current filter text to log lines
+        2. Colorizes log entries based on log level
+        3. Maintains scroll position
+        4. Shows only the last 200 matching lines
+        5. Auto-scrolls to bottom if already at bottom
+        """
         scroll_view = self.query_one("#log-scroll", VerticalScroll)
         log_output = self.query_one("#log-output", Static)
 
@@ -376,6 +493,17 @@ class ContainerActionScreen(ModalScreen):
             scroll_view.scroll_end(animate=False)
 
     def stream_logs(self):
+        """Stream container logs in a background thread.
+        
+        This method:
+        1. Connects to the container's log stream
+        2. Retrieves the last 100 log lines initially
+        3. Continuously receives new log lines
+        4. Maintains a rolling buffer of 1000 lines
+        5. Handles stream interruption and errors
+        
+        The logs are automatically timestamped and can be filtered in the UI.
+        """
         try:
             for line in stream_logs(self.container_id, follow=True, tail="100", timestamps=True):
                 if not self.keep_streaming:
@@ -389,7 +517,21 @@ class ContainerActionScreen(ModalScreen):
 
     
     async def read_shell_output(self):
-        """Read shell output and update the terminal UI."""
+        """Read shell output and update the terminal UI.
+        
+        This method continuously reads from the shell connection and updates the UI:
+        1. Handles different line ending types (\\n, \\r\\n, \\r)
+        2. Processes VT100 escape sequences
+        3. Expands tabs to spaces
+        4. Handles real-time updating commands (like top)
+        5. Manages command echo suppression
+        6. Maintains scroll position
+        
+        Special handling is provided for:
+        - Real-time updating commands (using cursor movement)
+        - Buffer management to handle partial reads
+        - Automatic scroll-to-bottom when at bottom
+        """
         try:
             buffer = ""
             output_widget = self.query_one("#shell-output", Static)
@@ -472,7 +614,21 @@ class ContainerActionScreen(ModalScreen):
             self.query_one("#shell-output", Static).update("".join(self.shell_lines[-1000:]))
 
     def action_open_shell(self) -> None:
-        """Open a shell connection to the container."""
+        """Open an interactive shell connection to the container.
+        
+        This method:
+        1. Checks if shell is available in the container
+        2. Handles cleanup of existing connections
+        3. Establishes a new shell connection
+        4. Sets up the shell reader/writer
+        5. Updates UI with connection status
+        6. Auto-focuses the shell input
+        
+        Handles various error cases:
+        - Container without shell
+        - Connection failures
+        - Shell not available errors
+        """
         if not self.shell_available:
             self.shell_lines.append("[red]No shell available in this container[/red]\n")
             self.query_one("#shell-output", Static).update("".join(self.shell_lines))
@@ -533,7 +689,13 @@ class ContainerActionScreen(ModalScreen):
             self.set_focus(None)
 
     def notify_bindings_change(self) -> None:
-        """Trigger a bindings update to show or hide tab-specific bindings."""
+        """Trigger a bindings update to show or hide tab-specific bindings.
+        
+        This method forces a refresh of the footer to reflect changed keybindings.
+        It ensures that tab-specific keybindings (like '/' for filter in Logs tab
+        or 'ctrl+l' for clear in Terminal tab) are properly displayed or hidden
+        based on the active tab.
+        """
         footer = self.query_one(Footer)
         if footer:
             footer.refresh(layout=True)
@@ -551,6 +713,21 @@ class ContainerActionScreen(ModalScreen):
             self.app.bell()
 
     def colorize_log(self, line: str) -> str:
+        """Apply color formatting to log lines based on log level.
+        
+        Args:
+            line: The log line to colorize
+            
+        Returns:
+            str: The log line with Textual markup for colors based on log level:
+                - Red: ERROR or FATAL
+                - Yellow: WARN
+                - Green: INFO
+                - Blue: DEBUG
+                
+        Also escapes any existing square brackets in the text to prevent
+        interference with Textual markup.
+        """
         escaped_line = re.sub(r"([\[\]])", r"\\\1", line)
         upper = escaped_line.upper()
         if "ERROR" in upper or "FATAL" in upper:

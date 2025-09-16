@@ -1,4 +1,14 @@
 # service.py
+"""Docker service and container management module.
+
+This module provides high-level functions for interacting with Docker services
+and containers. It handles:
+- Container listing and grouping
+- Service status management
+- Container operations (start/stop/delete)
+- Data formatting and type safety
+"""
+
 from __future__ import annotations
 from typing import Dict, List, Tuple, Sequence, Optional
 import requests_unixsocket
@@ -14,12 +24,37 @@ ContainerTuple5 = Tuple[int, str, str, str, str]
 
 
 def _safe_get_name(container: dict) -> str:
+    """Safely extract container name from container data.
+    
+    Args:
+        container: Container data dictionary from Docker API
+        
+    Returns:
+        str: Container name without leading slash, or 'unknown'
+        
+    This function handles various Docker API response formats and ensures
+    a valid string is always returned.
+    """
     names = container.get("Names") or []
     if names:
         return str(names[0]).lstrip("/")
     return container.get("Name", "unknown")
 
 def _format_ports(ports_field: Optional[list]) -> str:
+    """Format container port mappings into a readable string.
+    
+    Args:
+        ports_field: List of port mapping dictionaries from Docker API
+        
+    Returns:
+        str: Formatted string of port mappings (e.g., "8080:80/tcp")
+        
+    The function:
+    1. Handles both public and private ports
+    2. Includes protocol information
+    3. Removes duplicate mappings
+    4. Returns empty string for no ports
+    """
     if not ports_field:
         return ""
     
@@ -39,9 +74,18 @@ def _format_ports(ports_field: Optional[list]) -> str:
     parts = [part for i, part in enumerate(parts) if part not in parts[:i]]
     return ", ".join(parts)
 
-
-
 def _format_created(created_value) -> str:
+    """Format container creation timestamp into human-readable format.
+    
+    Args:
+        created_value: Unix timestamp or string from Docker API
+        
+    Returns:
+        str: Formatted date string (YYYY-MM-DD HH:MM)
+        
+    This function safely handles both integer timestamps and
+    pre-formatted strings from the Docker API.
+    """
     # Docker returns Created as seconds since epoch (int). But be defensive.
     try:
         ts = int(created_value)
@@ -51,12 +95,24 @@ def _format_created(created_value) -> str:
         return str(created_value or "")
 
 def _shorten_image(image: str) -> str:
-    """
-    Convert a Docker image string to a short, readable form.
+    """Convert a Docker image string to a short, readable form.
+    
+    Args:
+        image: Full Docker image string
+        
+    Returns:
+        str: Shortened and formatted image string
+        
     Examples:
-      'mysql:8.0'         -> 'mysql:8.0'
-      'sha256:1y8948021...' -> 'sha256:1y8948021'
-      'nginx@sha256:abcd...' -> 'nginx@sha256:abcd1234'
+        'mysql:8.0'         -> 'mysql:8.0'
+        'sha256:1y8948021...' -> 'sha256:1y8948021'
+        'nginx@sha256:abcd...' -> 'nginx@sha256:abcd1234'
+        
+    The function handles various image string formats:
+    - Regular tagged images
+    - SHA256 digest references
+    - Image@digest format
+    - Empty or invalid strings
     """
     if not image:
         return "unknown"
@@ -76,10 +132,21 @@ def _shorten_image(image: str) -> str:
 
 
 def get_projects_with_containers() -> Dict[str, List[ContainerTuple7]]:
-    """
-    Returns a mapping of project name -> list of 7-tuples:
-      (idx, short_id, name, image, status, ports, created_at)
-    This is the canonical (full) shape used across the app.
+    """Get all Docker projects and their containers.
+    
+    Returns:
+        Dict mapping project names to lists of container tuples, where each tuple contains:
+        (idx, short_id, name, image, status, ports, created_at)
+        
+    This is the canonical data format used throughout the application.
+    The function:
+    1. Retrieves all containers via Docker API
+    2. Groups them by project using Compose labels
+    3. Formats container details consistently
+    4. Handles error cases gracefully
+    
+    Containers not part of a Compose project are grouped under "Uncategorized".
+    Error conditions return an "Error" project with descriptive status.
     """
     try:
         response = session.get(f"{DOCKER_SOCKET_URL}/containers/json", params={"all": "1"})
@@ -122,6 +189,17 @@ def get_projects_with_containers() -> Dict[str, List[ContainerTuple7]]:
 
 # Backwards-compatible helper (if some code expects the old 5-tuple shape)
 def get_projects_with_containers_short() -> Dict[str, List[ContainerTuple5]]:
+    """Get projects and containers with minimal information.
+    
+    Returns:
+        Dict mapping project names to lists of container tuples, where each tuple contains:
+        (idx, container_id, name, image, status)
+        
+    This is a backwards-compatible version of get_projects_with_containers()
+    that returns the legacy 5-tuple format, omitting ports and creation time.
+    Used by older parts of the application that haven't been updated to use
+    the full 7-tuple format.
+    """
     full = get_projects_with_containers()
     short_map: Dict[str, List[ContainerTuple5]] = {}
     for project, containers in full.items():
@@ -133,15 +211,35 @@ def get_projects_with_containers_short() -> Dict[str, List[ContainerTuple5]]:
 
 
 def start_container(container_id: str) -> bool:
-    """Start container. Returns True on success (204)."""
+    """Start a Docker container.
+    
+    Args:
+        container_id: ID or name of the container to start
+        
+    Returns:
+        bool: True if container started successfully (HTTP 204)
+        
+    The function attempts to start a stopped container using the Docker API.
+    A return value of True indicates the container was successfully started
+    or was already running.
+    """
     resp = session.post(f"{DOCKER_SOCKET_URL}/containers/{container_id}/start")
     return resp.status_code == 204
 
 
 def stop_container(container_id: str, timeout: Optional[int] = None) -> bool:
-    """
-    Stop container. Returns True if stopped successfully or already stopped.
-    Some Docker setups return 304 for 'already stopped' — accept it.
+    """Stop a Docker container.
+    
+    Args:
+        container_id: ID or name of the container to stop
+        timeout: Seconds to wait for container to stop gracefully
+        
+    Returns:
+        bool: True if container stopped successfully or was already stopped
+        
+    The function handles both normal stop (204) and already-stopped (304) cases.
+    If timeout is specified, the container will be forcefully stopped after
+    that many seconds if it hasn't stopped gracefully.
     """
     params = {}
     if timeout is not None:
@@ -151,7 +249,19 @@ def stop_container(container_id: str, timeout: Optional[int] = None) -> bool:
 
 
 def delete_container(container_id: str, force: bool = False) -> bool:
-    """Delete (remove) a container. Returns True if removed (204) or not found (404)."""
+    """Delete (remove) a Docker container.
+    
+    Args:
+        container_id: ID or name of the container to delete
+        force: If True, force remove the container even if running
+        
+    Returns:
+        bool: True if container was removed or didn't exist
+        
+    The function considers both successful removal (204) and container-not-found (404)
+    as successful outcomes since the end result is the same - container doesn't exist.
+    Use force=True to remove running containers or when normal removal fails.
+    """
     qs = "?force=true" if force else ""
     resp = session.delete(f"{DOCKER_SOCKET_URL}/containers/{container_id}{qs}")
     return resp.status_code in (204, 404)
@@ -160,7 +270,22 @@ def delete_container(container_id: str, force: bool = False) -> bool:
 # Project-level helpers ------------------------------------------------------
 
 def _get_project_containers(project: str) -> List[str]:
-    """Return list of full container IDs belonging to a Compose project (case-insensitive)."""
+    """Get all container IDs for a Docker Compose project.
+    
+    Args:
+        project: Name of the Docker Compose project
+        
+    Returns:
+        list: List of full container IDs belonging to the project
+        
+    The function:
+    1. Queries all containers
+    2. Filters by Docker Compose project label
+    3. Uses case-insensitive matching
+    4. Returns full container IDs for reliability
+    
+    Returns empty list if project not found or on API errors.
+    """
     try:
         response = session.get(f"{DOCKER_SOCKET_URL}/containers/json", params={"all": "1"})
     except Exception:
@@ -187,6 +312,21 @@ def _get_project_containers(project: str) -> List[str]:
 
 
 def stop_project(project: str) -> bool:
+    """Stop all containers in a Docker Compose project.
+    
+    Args:
+        project: Name of the Docker Compose project
+        
+    Returns:
+        bool: True if all containers were stopped successfully
+        
+    The function:
+    1. Gets all containers in the project
+    2. Attempts to stop each container
+    3. Handles already-stopped containers
+    4. Logs progress and errors
+    5. Returns success only if all containers stopped
+    """
     containers = _get_project_containers(project)
     if not containers:
         print(f"[ERROR] No containers found for project '{project}'")
