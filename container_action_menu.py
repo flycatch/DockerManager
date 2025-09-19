@@ -344,32 +344,25 @@ class ContainerActionScreen(ModalScreen):
         shell_input = self.query_one("#shell-input", Input)
         if active_tab == "Terminal" and shell_input.has_focus and not shell_input.disabled:
             if event.key == "up":
-                event.prevent_default()
-                if self.command_history and self.history_index > 0:
-                    self.history_index -= 1
-                    shell_input.value = self.command_history[self.history_index]
-                elif self.command_history and self.history_index == -1:
-                    self.history_index = len(self.command_history) - 1
+                # Navigate up through command history
+                if self.command_history:
+                    if self.history_index == -1:
+                        self.history_index = len(self.command_history) - 1
+                    elif self.history_index > 0:
+                        self.history_index -= 1
                     shell_input.value = self.command_history[self.history_index]
             elif event.key == "down":
-                event.prevent_default()
-                if self.command_history and self.history_index < len(self.command_history) - 1:
-                    self.history_index += 1
-                    shell_input.value = self.command_history[self.history_index]
-                else:
-                    self.history_index = -1
-                    shell_input.value = ""
+                # Navigate down through command history
+                if self.command_history:
+                    if self.history_index < len(self.command_history) - 1:
+                        self.history_index += 1
+                        shell_input.value = self.command_history[self.history_index]
+                    else:
+                        self.history_index = -1
+                        shell_input.value = ""
             elif event.key == "tab":
-                event.prevent_default()
-                # Basic tab completion
-                current_input = shell_input.value
-                if current_input and not current_input.isspace():
-                    # Simple example: complete to common commands
-                    common_commands = ["ls", "cd", "pwd", "cat", "echo", "ps", "grep"]
-                    for cmd in common_commands:
-                        if cmd.startswith(current_input):
-                            shell_input.value = cmd
-                            break
+                # Tab completion placeholder (can be implemented later)
+                pass
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle submitted shell commands.
@@ -395,19 +388,47 @@ class ContainerActionScreen(ModalScreen):
             if not command:
                 return
 
-            # Reconnect if shell is closed
+            # Handle reconnection if needed
             if not self.shell_writer or self.shell_writer.is_closing():
                 self.shell_lines.append("[yellow]Reconnecting shell...[/yellow]\n")
                 self.query_one("#shell-output", Static).update("".join(self.shell_lines[-1000:]))
                 try:
+                    # Clean up old connection if it exists
+                    if self.shell_writer:
+                        await _safe_close(self.shell_writer)
+                        self.shell_reader = None
+                        self.shell_writer = None
+                    if self.shell_task and not self.shell_task.done():
+                        self.shell_task.cancel()
+                        self.shell_task = None
+                    
+                    # Establish new connection
                     self.shell_reader, self.shell_writer = await open_docker_shell(self.container_id)
-                    self.shell_lines.append(PROMPT)
-                    asyncio.create_task(self.read_shell_output())
+                    self.shell_lines.append("[green]Shell reconnected successfully[/green]\n")
+                    self.query_one("#shell-output", Static).update("".join(self.shell_lines[-1000:]))
+                    
+                    # Start new shell output reader task
+                    self.shell_task = asyncio.create_task(self.read_shell_output())
                 except Exception as e:
                     self.shell_lines.append(f"[red]Failed to reconnect: {e}[/red]\n")
                     self.query_one("#shell-output", Static).update("".join(self.shell_lines[-1000:]))
+                    if "no shell" in str(e).lower() or "not running" in str(e).lower():
+                        self.shell_available = False
+                        self.update_terminal_ui()
                     return
 
+                # Handle 'exit' command specially
+            if command.lower() == 'exit':
+                self.shell_lines.append("[yellow]Closing shell session...[/yellow]\n")
+                self.query_one("#shell-output", Static).update("".join(self.shell_lines))
+                await _safe_close(self.shell_writer)
+                self.shell_reader = None
+                self.shell_writer = None
+                if self.shell_task and not self.shell_task.done():
+                    self.shell_task.cancel()
+                    self.shell_task = None
+                return
+                
             # Send clear command first
             self.shell_writer.write(("clear\n").encode())
             await self.shell_writer.drain()
@@ -416,9 +437,7 @@ class ContainerActionScreen(ModalScreen):
             self.shell_lines.clear()
             self.shell_lines.append(f"{command}\n")  # Show the command at top
             self.shell_lines.append(PROMPT)
-            self.query_one("#shell-output", Static).update("".join(self.shell_lines))
-
-            # Send the actual command
+            self.query_one("#shell-output", Static).update("".join(self.shell_lines))            # Send the actual command
             try:
                 self.shell_writer.write((command + "\n").encode())
                 await self.shell_writer.drain()
@@ -581,8 +600,15 @@ class ContainerActionScreen(ModalScreen):
                     else:
                         # Insert output above the prompt
                         if clean_line.strip():
+                            # Keep buffer size in check by removing oldest lines if needed
+                            if len(self.shell_lines) > 1000:
+                                self.shell_lines = self.shell_lines[-900:]  # Keep last 900 lines
+                                self.shell_lines.append("[dim]... older output truncated ...[/dim]\n")
+                            
+                            # Add the new line just before the prompt
                             self.shell_lines.insert(-1, clean_line + line_end)
                         else:
+                            # Handle empty lines to maintain formatting
                             self.shell_lines.insert(-1, line_end)
 
                     # Update the display
@@ -739,6 +765,6 @@ class ContainerActionScreen(ModalScreen):
         elif "DEBUG" in upper:
             return f"[blue]{escaped_line}[/blue]"
         return escaped_line
-        
+
 
 
