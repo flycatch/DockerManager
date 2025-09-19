@@ -95,6 +95,8 @@ class DockerManager(App):
             with TabPane("🟢 Services", id="tab-projects"):
                 with ProjectsTab(id="projects-layout"):
                     self.project_tree = Tree("🔹Compose Projects", id="project-tree")
+                    self.project_tree.can_focus = True
+                    self.project_tree.show_guides = True
                     yield self.project_tree
                     with Vertical(id="container-section"):
                         yield ContainerHeader()
@@ -106,7 +108,8 @@ class DockerManager(App):
     async def on_mount(self) -> None:
         self.set_interval(2.0, self.trigger_background_refresh)
         await self.refresh_projects()
-        self.set_focus(self.tabbed_content)
+        # Start with uncategorized tab
+        self.action_goto_uncategorized()
 
     def _get_tabbed(self) -> TabbedContent:
         return self.query_one(TabbedContent)
@@ -252,19 +255,16 @@ class DockerManager(App):
                     node = self.project_tree.root.add(f"🔹 {project}", data=containers)
                     node.allow_expand = False
             self.project_tree.root.expand()
+            self.project_tree.show_root = False
 
-            # Auto-select current/first project
-            if self.current_project:
+            # Only restore previous project selection if it exists, without auto-focusing
+            if self.current_project and self.is_projects_tab_active():
                 for node in self.project_tree.root.children:
                     label = node.label.plain if isinstance(node.label, Text) else str(node.label)
                     if label[1:].strip() == self.current_project:
-                        self.project_tree.select_node(node)
+                        # Update container list without changing focus
                         await self.refresh_container_list(node.data or [])
                         break
-            elif self.project_tree.root.children:
-                first_node = self.project_tree.root.children[0]
-                self.project_tree.select_node(first_node)
-                await self.refresh_container_list(first_node.data or [])
 
         finally:
             self._refreshing = False
@@ -323,21 +323,11 @@ class DockerManager(App):
                 container_map[cid] = card
                 await mount_target.mount(card)
 
-        # Restore focus if the focused container still exists
-        if focused_id:
+        # Only restore focus if we had a previously focused container and we're in the active tab
+        if focused_id and self.screen.focused in mount_target.ancestors_with_self:
             focused_card = self.get_container_card_by_id(focused_id)
             if focused_card:
                 self.set_focus(focused_card)
-        else:
-            # Find first ContainerCard child (skip the search Input if present)
-            first_card = None
-            for child in mount_target.children:
-                if isinstance(child, ContainerCard):
-                    first_card = child
-                    break
-
-            if first_card:
-                self.set_focus(first_card)
 
     def get_container_card_by_id(self, container_id: str) -> ContainerCard | None:
         """Find a container card by ID in either cards dictionary"""
@@ -347,12 +337,28 @@ class DockerManager(App):
             return self.uncategorized_cards[container_id]
         return None
 
+    async def on_tree_node_highlighted(self, event: Tree.NodeHighlighted) -> None:
+        """Handle project tree node hover/focus events."""
+        containers: Any = event.node.data
+        if containers:
+            # Just preview the containers without changing focus
+            await self.refresh_container_list(containers)
+            self.current_project = self.get_selected_project()
+
     async def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
+        """Handle project tree node selection (Enter key)."""
         containers: Any = event.node.data
         if containers:
             await self.refresh_container_list(containers)
-
-        self.current_project = self.get_selected_project()
+            self.current_project = self.get_selected_project()
+            
+            # Move focus to the first container in the list
+            container_list = self.query_one("#container-list")
+            if container_list and container_list.children:
+                for child in container_list.children:
+                    if isinstance(child, ContainerCard):
+                        self.set_focus(child)
+                        break
 
     async def on_container_action_screen_selected(self, message: ContainerActionScreen.Selected):
         cid = message.container_id
