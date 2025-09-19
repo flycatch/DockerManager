@@ -42,6 +42,7 @@ class DockerManager(App):
     BINDINGS = [
         Binding("1", "goto_uncategorized", "Standalone", show=True),
         Binding("2", "goto_projects", "Services", show=True),
+        Binding("tab", "toggle_focus", "Toggle Focus", show=True, key_display="Tab"),
         Binding("q", "quit", "Quit", show=True)
     ]
 
@@ -124,9 +125,17 @@ class DockerManager(App):
             # Let the ContainersTab handle the escape key
             return
         
-        # Handle other escape logic for projects tab if needed
+        # Handle escape in projects tab
         if self.is_projects_tab_active():
-            pass
+            # If focus is in the container list, return it to the project tree
+            focused = self.screen.focused
+            container_list = self.query_one("#container-list")
+            if focused and container_list and focused in container_list.ancestors_with_self:
+                if self.project_tree and self.project_tree.root.children:
+                    # Select the first project
+                    first_node = self.project_tree.root.children[0]
+                    self.project_tree.select_node(first_node)
+                self.set_focus(self.project_tree)
 
     def action_goto_uncategorized(self) -> None:
         self.tabbed_content.active = "tab-uncategorized"
@@ -139,7 +148,31 @@ class DockerManager(App):
 
     def action_goto_projects(self) -> None:
         self.tabbed_content.active = "tab-projects"
-        if self.project_tree:
+        if self.project_tree and self.project_tree.root.children:
+            first_node = self.project_tree.root.children[0]
+            # Move cursor to first project without selecting it
+            self.project_tree.move_cursor(first_node)
+            # Show its containers
+            if first_node.data:
+                self.run_worker(self.refresh_container_list(first_node.data), group="refresh")
+            self.set_focus(self.project_tree)
+            
+    def action_toggle_focus(self) -> None:
+        """Toggle focus between project tree and container list in Services tab."""
+        if not self.is_projects_tab_active():
+            return
+            
+        focused = self.screen.focused
+        container_list = self.query_one("#container-list")
+        
+        # If focus is in project tree, move to first container if available
+        if focused == self.project_tree and container_list and container_list.children:
+            for child in container_list.children:
+                if isinstance(child, ContainerCard):
+                    self.set_focus(child)
+                    break
+        # If focus is in container list, move back to project tree
+        elif container_list and focused in container_list.ancestors_with_self:
             self.set_focus(self.project_tree)
 
     def action_next_tab(self) -> None:
@@ -344,6 +377,9 @@ class DockerManager(App):
             # Just preview the containers without changing focus
             await self.refresh_container_list(containers)
             self.current_project = self.get_selected_project()
+        else:
+            # Clear container list if no containers in the highlighted project
+            await self.sync_card_list([], self.cards, self.container_list)
 
     async def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
         """Handle project tree node selection (Enter key)."""
