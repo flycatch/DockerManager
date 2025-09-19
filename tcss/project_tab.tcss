@@ -28,7 +28,7 @@
 /* 🌳 Compose Project Tree */
 #project-tree {
   border: round #79879eff;
-  padding: 1 1;
+  padding: 1 2;
   margin: 0 0;
   background: #1e1e2e;
   height: 1fr;
@@ -36,26 +36,50 @@
   width: 50;
   color: #cdd6f4;
   scrollbar-gutter: stable;
+  border-title-color: #89b4fa;
+  border-title-align: left;
+  border-title-background: #313244;
+  border-subtitle-color: #7f849c;
 }
+
 /* Highlight when focused */
 #project-tree:focus-within {
     border: round #89b4fa;    /* active blue */
+    background: #181825;
 }
 
 .tree--label {
-  padding-left: 2;
+  padding: 0 1;
   color: #cdd6f4;
   text-style: bold;
+  height: 3;
+  content-align: left middle;
+  background: #1e1e2e;
+  border: none;
+}
+
+.tree--label:hover {
+  background: #313244;
 }
 
 .tree--cursor {
-  background: #313244;
-  color: #f9e2af;
-  text-style: bold reverse;
+  background: #45475a;
+  color: #94e2d5;
+  text-style: bold;
+  border: round #89b4fa;
 }
 
 .tree--guides {
-  color: #7f849c;
+  color: #6c7086;
+}
+
+.tree--guides.tree--guide-line {
+  color: #45475a;
+}
+
+.tree-node {
+  padding: 0;
+  margin: 0 1;
 }
 /* Add this to your CSS */
 ProjectsTab:focus {
