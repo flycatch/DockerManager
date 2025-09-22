@@ -9,7 +9,8 @@ import asyncio
 import re
 from container_logs import stream_logs
 from container_exec import open_docker_shell, check_shell_availability
-from service import get_container_info
+from tabs.container_info import get_container_info_dict
+from tabs.container_info import InfoTab
 
 async def _safe_close(writer: Optional[asyncio.StreamWriter]) -> None:
     """Safely close a StreamWriter if it exists.
@@ -212,10 +213,9 @@ class ContainerActionScreen(ModalScreen):
         Also adds a footer with keybindings.
         """
         with TabbedContent():
-            with TabPane("Info", id="info-tab"): 
-                with VerticalScroll(classes="info-container"):
-                    yield Static("", id="info-output", classes="info-text")
-
+            with TabPane("Info", id="info-tab"):
+                yield InfoTab(self.container_id)
+                
             with TabPane("Logs", id="Logs"):
                 with VerticalScroll(id="log-scroll", classes="log-container"):
                     yield Static("", id="log-output", classes="log-text")
@@ -265,8 +265,9 @@ class ContainerActionScreen(ModalScreen):
             pass        
 
     async def load_container_info(self):
-        info_text = await get_container_info(self.container_id)
-        self.query_one("#info-output", Static).update(info_text)
+        """Load container info - the InfoTab will handle its own data loading."""
+        pass
+
 
     def check_shell_availability(self):
         """Check if the container has a shell available."""
