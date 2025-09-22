@@ -10,7 +10,7 @@ and containers. It handles:
 """
 
 from __future__ import annotations
-from typing import Dict, List, Tuple, Sequence, Optional
+from typing import Dict, List, Tuple, Optional
 import requests_unixsocket
 from datetime import datetime
 
@@ -382,3 +382,4 @@ def delete_project(project: str, force: bool = True) -> bool:
 
 def restart_project(project: str) -> bool:
     return stop_project(project) and start_project(project)
+

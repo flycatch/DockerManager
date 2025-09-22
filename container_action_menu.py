@@ -9,7 +9,8 @@ import asyncio
 import re
 from container_logs import stream_logs
 from container_exec import open_docker_shell, check_shell_availability
-
+from tabs.container_info import get_container_info_dict
+from tabs.container_info import InfoTab
 
 async def _safe_close(writer: Optional[asyncio.StreamWriter]) -> None:
     """Safely close a StreamWriter if it exists.
@@ -144,8 +145,8 @@ def strip_vt100(text: str) -> str:
 
 class ContainerActionScreen(ModalScreen):
     COMMON_BINDINGS: List[BindingType] = [
-        Binding("left", "switch_tab('Logs')", "Logs Tab"),
-        Binding("right", "switch_tab('Terminal')", "Shell Tab"),
+        Binding("left", "switch_tab_prev", "Previous Tab"),
+        Binding("right", "switch_tab_next", "Next Tab"),
         Binding("escape", "handle_escape", "Close", key_display="ESC"),
     ]
     
@@ -155,7 +156,7 @@ class ContainerActionScreen(ModalScreen):
         Binding("p", "do_action('stop')", "Stop"),
         Binding("d", "do_action('delete')", "Delete"),
     ]
-    
+
     TERMINAL_BINDINGS: List[BindingType] = COMMON_BINDINGS + [
         Binding("ctrl+l", "clear_shell", "Clear Shell"),
     ]
@@ -212,6 +213,9 @@ class ContainerActionScreen(ModalScreen):
         Also adds a footer with keybindings.
         """
         with TabbedContent():
+            with TabPane("Info", id="info-tab"):
+                yield InfoTab(self.container_id)
+                
             with TabPane("Logs", id="Logs"):
                 with VerticalScroll(id="log-scroll", classes="log-container"):
                     yield Static("", id="log-output", classes="log-text")
@@ -246,6 +250,24 @@ class ContainerActionScreen(ModalScreen):
         self.log_worker = self.run_worker(self.stream_logs, group="logs", thread=True)
         # Check if shell is available in the container
         self.check_shell_availability()
+        await self.load_container_info()
+        try:
+            tc = self.query_one(TabbedContent)
+            tc.active = "Logs"
+            self.active_tab = "Logs"
+            # Make sure footer shows Logs bindings
+            self.__class__.BINDINGS = self.LOGS_BINDINGS
+            self.notify_bindings_change()
+            # Focus the log scroll area after the UI refresh completes
+            self.call_after_refresh(lambda: self.set_focus(self.query_one("#log-scroll")))
+        except Exception:
+            # don't crash mount if something goes wrong
+            pass        
+
+    async def load_container_info(self):
+        """Load container info - the InfoTab will handle its own data loading."""
+        pass
+
 
     def check_shell_availability(self):
         """Check if the container has a shell available."""
@@ -694,15 +716,22 @@ class ContainerActionScreen(ModalScreen):
 
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
         """Handle tab activation."""
-        if event.tab.id:
-            self.active_tab = event.tab.id
-            # Switch bindings based on active tab
-            if event.tab.id == "Terminal":
-                self.__class__.BINDINGS = self.TERMINAL_BINDINGS
-            else:
-                self.__class__.BINDINGS = self.LOGS_BINDINGS
-            # Trigger bindings update
-            self.notify_bindings_change()
+        if not event.tab.id:
+            return
+
+        self.active_tab = event.tab.id
+
+        # Bindings: Terminal uses terminal bindings, Logs uses log bindings, Info uses common bindings
+        if event.tab.id == "Terminal":
+            self.__class__.BINDINGS = self.TERMINAL_BINDINGS
+        elif event.tab.id == "Logs":
+            self.__class__.BINDINGS = self.LOGS_BINDINGS
+        else:  # Info
+            # Keep the basic common bindings so ESC / left / right still work
+            self.__class__.BINDINGS = self.COMMON_BINDINGS
+
+        # Trigger bindings update
+        self.notify_bindings_change()
 
         if event.tab.id == "Terminal":
             # Update UI based on shell availability
@@ -710,9 +739,16 @@ class ContainerActionScreen(ModalScreen):
                 self.update_terminal_ui()
             # Focus input field after the tab switch is complete
             self.call_after_refresh(self.focus_shell_input_if_needed)
-        else:
-            # Remove focus from inputs when switching to other tabs
+
+        elif event.tab.id == "Info":
+            # Refresh Info tab content dynamically when activated.
+            # load_container_info is async, so schedule it properly
+            self.call_after_refresh(lambda: asyncio.create_task(self.load_container_info()))
+
+        else:  # Logs
+            # Remove focus from inputs when switching to Logs (or Info above)
             self.set_focus(None)
+
 
     def notify_bindings_change(self) -> None:
         """Trigger a bindings update to show or hide tab-specific bindings.
@@ -730,13 +766,139 @@ class ContainerActionScreen(ModalScreen):
         self.post_message(self.Selected(action_name, self.container_id))
         self.app.pop_screen()
 
-    def action_switch_tab(self, tab: str) -> None:
+    def _pane_identity(self, pane: Any, index: int) -> str:
+        """Return a stable identifier for a TabPane: prefer id, then label/title, else synthetic."""
+        pid = getattr(pane, "id", None)
+        if pid:
+            return str(pid)
+        label = getattr(pane, "label", None) or getattr(pane, "title", None)
+        if label:
+            return str(label)
+        return f"__pane_{index}"
+
+
+    def _find_current_index(self, tc: TabbedContent, panes: list[Any]) -> int:
+        """
+        Robustly find the active pane index, matching on:
+        - tc.active == pane.id (most common)
+        - tc.active == pane.label/title
+        - tc.active is the pane object itself
+        Fallback: 0
+        """
+        active = tc.active
+        for i, p in enumerate(panes):
+            pid = getattr(p, "id", None)
+            label = getattr(p, "label", None) or getattr(p, "title", None)
+            if isinstance(active, str):
+                if pid == active or label == active:
+                    return i
+            else:
+                # tc.active might be the pane object itself
+                if active is p:
+                    return i
+        return 0
+
+
+    def action_switch_tab_prev(self) -> None:
+        """Switch to the previous tab (wraps around)."""
         try:
-            self.query_one(TabbedContent).active = tab
-            if tab == "Terminal":
+            tc = self.query_one(TabbedContent)
+            panes = list(tc.query(TabPane))
+            if not panes:
+                return
+
+            cur_idx = self._find_current_index(tc, panes)
+            prev_idx = cur_idx - 1
+            if prev_idx < 0:
+                prev_idx = len(panes) - 1  # wrap to last
+
+            pane = panes[prev_idx]
+            new_active = getattr(pane, "id", None) or getattr(pane, "label", None) or getattr(pane, "title", None) or str(prev_idx)
+            tc.active = str(new_active)
+
+            # post-switch behavior
+            if tc.active == "Terminal":
                 self.call_after_refresh(self.action_open_shell)
+            elif tc.active == "Info":
+                self.call_after_refresh(lambda: asyncio.create_task(self.load_container_info()))
+
         except Exception:
             self.app.bell()
+
+
+    def action_switch_tab_next(self) -> None:
+        """Switch to the next tab (wraps around)."""
+        try:
+            tc = self.query_one(TabbedContent)
+            panes = list(tc.query(TabPane))
+            if not panes:
+                return
+
+            cur_idx = self._find_current_index(tc, panes)
+            next_idx = cur_idx + 1
+            if next_idx >= len(panes):
+                next_idx = 0  # wrap to first
+
+            pane = panes[next_idx]
+            new_active = getattr(pane, "id", None) or getattr(pane, "label", None) or getattr(pane, "title", None) or str(next_idx)
+            tc.active = str(new_active)
+
+            # post-switch behavior
+            if tc.active == "Terminal":
+                self.call_after_refresh(self.action_open_shell)
+            elif tc.active == "Info":
+                self.call_after_refresh(lambda: asyncio.create_task(self.load_container_info()))
+
+        except Exception:
+            self.app.bell()
+
+
+    def action_switch_tab(self, tab: str) -> None:
+        """
+        Switch to a tab by id or label. Safe and triggers terminal open / info refresh when needed.
+        """
+        try:
+            tc = self.query_one(TabbedContent)
+            panes = list(tc.query(TabPane))
+            if not panes:
+                return
+
+            # If already active, nothing to do
+            if isinstance(tc.active, str) and tc.active == tab:
+                return
+
+            # Try matching by id first, then label/title
+            matched_id = None
+            for i, p in enumerate(panes):
+                pid = getattr(p, "id", None)
+                label = getattr(p, "label", None) or getattr(p, "title", None)
+                if pid == tab:
+                    matched_id = str(pid)
+                    break
+                if label == tab:
+                    matched_id = str(pid or label)
+                    break
+
+            if matched_id:
+                tc.active = matched_id
+            else:
+                # If the provided tab looks like an id that we don't know, try to set it directly
+                # (Textual may accept it), otherwise ring bell.
+                try:
+                    tc.active = str(tab)
+                except Exception:
+                    self.app.bell()
+                    return
+
+            # After switching behavior
+            if tc.active == "Terminal":
+                self.call_after_refresh(self.action_open_shell)
+            elif tc.active == "Info":
+                self.call_after_refresh(lambda: asyncio.create_task(self.load_container_info()))
+
+        except Exception:
+            self.app.bell()
+
 
     def colorize_log(self, line: str) -> str:
         """Apply color formatting to log lines based on log level.

@@ -1,0 +1,74 @@
+/* 🟦 Info Tab Container */
+#info-tab {
+    margin: 0;
+    padding: 0;
+    background: #1e1e2e;
+    height: auto;
+}
+
+#info-container {
+    margin: 0;
+    padding: 1;
+    border: round #45475a;
+    width: 100%;
+}
+
+/* 📄 Info Line */
+.info-line {
+    width: 70%;
+    height: auto;
+    margin: 0 0;
+    padding: 0 1;
+    layout: grid;
+    grid-size: 2;
+    grid-columns: 1fr 5fr;
+    grid-gutter: 1;
+}
+
+/* 🔤 Label / Value Styling */
+.label {
+    color: #89b4fa;
+    text-style: bold;
+    text-align: left;
+    padding-left: 1;
+}
+
+.value {
+    color: #cdd6f4;
+    text-align: left;
+    padding-left: 1;
+    content-align: left middle;
+    text-style: none;
+    text-wrap: wrap;
+}
+
+/* 🟡 Highlight status values */
+.info-line .state-running {
+    color: #a6e3a1;
+    text-style: bold;
+}
+
+.info-line .state-stopped {
+    color: #f38ba8;
+    text-style: italic;
+}
+
+.info-line .state-exited {
+    color: #f9e2af;
+    text-style: italic;
+}
+
+.info-line .state-restarting {
+    color: #f38ba8;  /* Critical red color */
+    text-style: bold blink;  /* Bold and blinking to indicate activity */
+}
+
+/* 📌 Networks and Volumes */
+.info-line .networks,
+.info-line .volumes,
+.info-line .ports {
+    color: #cba6f7;
+    text-style: none;
+    text-wrap: wrap;
+}
+
