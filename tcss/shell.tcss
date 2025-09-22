@@ -17,8 +17,8 @@
   overflow: auto;
   background: #000000;
   border: round #5e81ac;
-  margin: 1 0;
-  padding: 1;
+  margin: 0;
+  padding: 0;
 }
 
 /* 📤 Shell Output Text */
@@ -47,7 +47,7 @@
   color: #ffffff;
   text-style: bold;
   padding: 0 1;
-  margin: 1 0;
+  margin: 0;
 }
 
 /* 🧠 Command History Hover/Focus */

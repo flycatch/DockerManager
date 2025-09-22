@@ -1,0 +1,67 @@
+/*
+ * container_info_tab.tcss
+ * Styles for the Info tab in the Docker Manager TUI
+ * Focuses on displaying container details in a card format
+ * using Catppuccin Mocha palette.
+ */
+
+/* 🟦 Info Tab Container */
+#info-tab {
+  margin: 0;
+  padding: 0;
+  border: round #45475a;
+  background: #1e1e2e;
+  height: 1fr;
+  overflow: auto;
+}
+
+/* 📄 Info Card */
+.info-card {
+  padding: 1;
+  margin: 1 0;
+  border: round #313244;
+  background: #2a2a37;
+  layout: grid;
+  grid-size: 2;
+  grid-columns: 1fr 2fr;
+}
+
+
+/* 🔤 Label / Value Styling */
+.info-card .label {
+  color: #89b4fa;
+  text-style: bold;
+  content-align: right middle;
+}
+
+.info-card .value {
+  color: #cdd6f4;
+  content-align: left middle;
+  text-style: none;
+  text-wrap: wrap;
+}
+
+/* 🟡 Highlight status values */
+.info-card .state-running {
+  color: #a6e3a1;
+  text-style: bold;
+}
+
+.info-card .state-stopped {
+  color: #f38ba8;
+  text-style: italic;
+}
+
+.info-card .state-exited {
+  color: #f9e2af;
+  text-style: italic;
+}
+
+/* 📌 Networks and Volumes */
+.info-card .networks,
+.info-card .volumes,
+.info-card .ports {
+  color: #cba6f7;
+  text-style: none;
+  text-wrap: wrap;
+}

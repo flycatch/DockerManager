@@ -26,7 +26,7 @@
   overflow: auto;
   background: #1e1e2e;
   border: round #45475a;
-  margin: 1 0;
+  margin: 0;
 }
 
 /* 📤 Log Output */
