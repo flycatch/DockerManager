@@ -1,9 +1,10 @@
 from typing import Optional, List, Tuple
 from datetime import datetime
 from textual.app import ComposeResult
-from textual.containers import Container, Horizontal
+from textual.containers import Container, Horizontal, Vertical
 from textual.widgets import Static
 from textual.reactive import reactive
+from textual.widgets import Button
 import requests_unixsocket
 import random
 from textual_plotext import PlotextPlot
@@ -22,9 +23,15 @@ class GraphWidget(Static):
     network_rx = reactive(0)
     network_tx = reactive(0)
 
-    def __init__(self, container_id: str) -> None:
-        super().__init__(id="graph-widget")
+    # mode can be 'cpu', 'memory', or 'network'
+    mode = reactive("cpu")
+
+    def __init__(self, container_id: str, mode: str = "cpu", widget_id: str | None = None) -> None:
+        # widget_id allows multiple stacked instances with unique ids
+        super().__init__(id=(widget_id or "graph-widget"))
         self.container_id = container_id
+        # `mode` is declared reactive at class level; assign plain value here
+        self.mode = mode
         self.cpu_history: List[float] = [0.0] * 60
         self.memory_history: List[float] = [0.0] * 60
         self.network_history: List[float] = [0.0] * 30
@@ -33,7 +40,10 @@ class GraphWidget(Static):
         self.previous_system_total = 0
 
     def compose(self) -> ComposeResult:
-        yield PlotextPlot(id="plot-widget")
+    # expose plot; use unique plot id derived from this widget's id so multiple
+        # GraphWidget instances don't conflict when querying PlotextPlot
+        plot_id = f"plot-{self.id}"
+        yield PlotextPlot(id=plot_id)
 
     def on_mount(self) -> None:
         self.initialize_plot()
@@ -88,7 +98,6 @@ class GraphWidget(Static):
     def update_plot(self) -> None:
         plot_widget = self.query_one(PlotextPlot)
         plt = plot_widget.plt
-
         # Clear the figure before drawing
         plt.clear_figure()
 
@@ -106,38 +115,48 @@ class GraphWidget(Static):
         while len(recent_network) < 10:
             recent_network.insert(0, 0.0)
 
-        time_indices = list(range(len(recent_cpu)))
-        network_indices = list(range(len(recent_network)))
+        # Draw only one metric depending on mode
+        if self.mode == "cpu":
+            time_indices = list(range(len(recent_cpu)))
+            plt.plot(time_indices, recent_cpu, color="red")
+            plt.plotsize(80, 20)
+            plt.title(f"CPU Usage: {self.cpu_usage:.1f}%")
+            plt.xlim(0, max(len(time_indices) - 1, 1))
+            # Dynamic y-axis: 5% above the maximum CPU value seen so far to give
+            # some headroom and update every iteration.
+            try:
+                max_seen = max(self.cpu_history) if self.cpu_history else max(recent_cpu) if recent_cpu else 1.0
+            except Exception:
+                max_seen = max(recent_cpu) if recent_cpu else 1.0
+            y_upper = max(1.0, max_seen * 1.05)
+            plt.ylim(0, y_upper)
 
-        # Create the subplot grid (1 row, 3 columns)
-        plt.subplots(1, 3)
+        elif self.mode == "memory":
+            time_indices = list(range(len(recent_memory)))
+            plt.plot(time_indices, recent_memory, color="blue")
+            plt.plotsize(80, 20)
+            mem_last = recent_memory[-1] if recent_memory else 0.0
+            plt.title(f"RAM Usage: {mem_last:.1f}%")
+            plt.xlim(0, max(len(time_indices) - 1, 1))
+            # Dynamic y-axis for memory (percentage). Cap at 100% since memory
+            # percent shouldn't exceed 100; add 5% headroom based on observed max.
+            try:
+                mem_max_seen = max(self.memory_history) if self.memory_history else max(recent_memory) if recent_memory else 0.0
+            except Exception:
+                mem_max_seen = max(recent_memory) if recent_memory else 0.0
+            mem_upper = max(1.0, mem_max_seen * 1.05)
+            mem_upper = min(mem_upper, 100.0)
+            plt.ylim(0, mem_upper)
 
-        # CPU subplot
-        plt.subplot(1, 1)
-        plt.plot(time_indices, recent_cpu, color="red")
-        plt.plotsize(40, 15)
-        plt.title(f"CPU Usage: {self.cpu_usage:.1f}%")
-        plt.xlim(0, max(len(time_indices) - 1, 1))
-        plt.ylim(0, 100)
-
-        # Memory subplot
-        plt.subplot(1, 2)
-        plt.plot(time_indices, recent_memory, color="blue")
-        plt.plotsize(40, 15)
-        mem_last = recent_memory[-1] if recent_memory else 0.0
-        plt.title(f"RAM Usage: {mem_last:.1f}%")
-        plt.xlim(0, max(len(time_indices) - 1, 1))
-        plt.ylim(0, 100)
-
-        # Network subplot
-        plt.subplot(1, 3)
-        network_max = max(recent_network) if recent_network else 100
-        plt.plot(network_indices, recent_network, color="green")
-        plt.plotsize(40, 15)
-        net_last = recent_network[-1] if recent_network else 0.0
-        plt.title(f"Network: {net_last:.0f} KB/s")
-        plt.xlim(0, max(len(network_indices) - 1, 1))
-        plt.ylim(0, network_max * 1.2)
+        else:  # network
+            network_indices = list(range(len(recent_network)))
+            network_max = max(recent_network) if recent_network else 100
+            plt.plot(network_indices, recent_network, color="green")
+            plt.plotsize(80, 20)
+            net_last = recent_network[-1] if recent_network else 0.0
+            plt.title(f"Network: {net_last:.0f} KB/s")
+            plt.xlim(0, max(len(network_indices) - 1, 1))
+            plt.ylim(0, max(1, network_max * 1.2))
 
         # Render
         plt.show()
@@ -172,7 +191,42 @@ class InfoTab(Container):
 
             with Container(id="graphs-container") as graphs:
                 graphs.border_title = "📊 Real-time Metrics"
-                yield GraphWidget(self.container_id)
+                # Stack three non-clickable graphs vertically: CPU, RAM, Network
+                with Vertical(id="graphs-stack"):
+                    # Each GraphWidget is wrapped in a container so they stack and
+                    # can display individual titles/frames. This helps prevent one
+                    # plot from occupying the entire right side.
+                    with Container(id="graph-box-cpu"):
+                        yield GraphWidget(self.container_id, mode="cpu", widget_id="graph-cpu")
+                    with Container(id="graph-box-ram"):
+                        yield GraphWidget(self.container_id, mode="memory", widget_id="graph-ram")
+                    with Container(id="graph-box-net"):
+                        yield GraphWidget(self.container_id, mode="network", widget_id="graph-net")
+
+    def on_button_pressed(self, event) -> None:
+        """Handle button presses for switching graph mode."""
+        button_id = getattr(event.button, 'id', None)
+        gw = None
+        try:
+            gw = self.query_one(GraphWidget)
+        except Exception:
+            gw = None
+
+        if not gw:
+            return
+
+        if button_id == "btn-cpu":
+            gw.mode = "cpu"
+        elif button_id == "btn-ram":
+            gw.mode = "memory"
+        elif button_id == "btn-net":
+            gw.mode = "network"
+
+        # Force immediate redraw
+        try:
+            gw.update_plot()
+        except Exception:
+            pass
 
 
     def compose_info(self, info_data: dict) -> None:
