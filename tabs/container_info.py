@@ -1,10 +1,8 @@
 from typing import Optional
-from datetime import datetime
-import requests
 from textual.app import ComposeResult
-from textual.containers import Container, Horizontal
+from textual.containers import Container, Horizontal, VerticalScroll
 from textual.widgets import Static
-
+from datetime import datetime, timezone
 import requests_unixsocket
 
 # Docker socket configuration
@@ -12,7 +10,7 @@ DOCKER_SOCKET_URL = "http+unix://%2Fvar%2Frun%2Fdocker.sock/v1.42"
 session = requests_unixsocket.Session()
 
 class InfoTab(Container):
-    """Info tab widget that displays container information with proper styling."""
+    """Info tab widget that displays container information with proper styling and scrolling."""
     
     def __init__(self, container_id: str) -> None:
         super().__init__(id="info-tab")
@@ -29,40 +27,53 @@ class InfoTab(Container):
         print(f"Fetched info data: {info_data}")  # Debug print
         self.loading = False
         self.compose_info(info_data)
-        self.refresh()
     
     def compose(self) -> ComposeResult:
         """Compose the initial UI."""
-        # Create the container that will hold the info
-        yield Container(id="info-container")
+        # Create a scrollable container that will hold the info
+        # Using 'with' ensures proper nesting
+        with VerticalScroll(id="info-scroll"):
+            yield Container(id="info-container", classes="info-content")
 
     def compose_info(self, info_data: dict) -> None:
         """Compose the UI with the container information."""
-        if not info_data:
-            self.query_one("#info-container").mount(Static("No container information available"))
-            return
-
         container = self.query_one("#info-container")
         container.remove_children()
         
+        if not info_data:
+            container.mount(Static("No container information available"))
+            return
+        
         for label, value in info_data.items():
-            # Create all widgets first
+            # Create the horizontal line container
             line = Horizontal(classes="info-line")
-            label_widget = Static(str(label), classes="label")
+            
+            # Determine label class based on content
+            label_classes = "label"
+            if "  " in label:  # Network details have indentation
+                label_classes += " network-detail"
+            
+            label_widget = Static(str(label), classes=label_classes)
             
             # Add appropriate classes based on the content type
             classes = ["value"]
             if label == "State:":
-                classes.append(f"state-{value.lower()}")
-            elif label in ["Networks:", "Ports:", "Mounts:"]:
-                classes.append(label.lower().rstrip(':'))
+                state_value = value.lower().split()[0]  # Take first word for state class
+                classes.append(f"state-{state_value}")
+            elif any(keyword in label for keyword in ["Network", "Port", "Mount", "Volume"]):
+                classes.append("resource-info")
+            elif any(keyword in label for keyword in ["Driver", "Scope", "Options"]):
+                classes.append("config-info")
             
             value_widget = Static(str(value), classes=" ".join(classes))
             
-            # Mount in the correct order: line to container, then widgets to line
+            # Mount line to container first, then mount widgets to line
             container.mount(line)
-            line.mount(label_widget)
-            line.mount(value_widget)
+            line.mount(label_widget, value_widget)
+        
+        # Force refresh of the scroll area to recalculate virtual size
+        scroll = self.query_one("#info-scroll", VerticalScroll)
+        scroll.refresh(layout=True)
 
 
 def get_container_info_dict(container_id: str) -> dict:
@@ -87,11 +98,11 @@ def get_container_info_dict(container_id: str) -> dict:
     def _fmt_delta(dt: Optional[datetime]) -> str:
         if not dt:
             return "unknown"
-        now = datetime.utcnow().replace(tzinfo=dt.tzinfo) if dt.tzinfo else datetime.utcnow()
         try:
+            now = datetime.now(timezone.utc).astimezone(dt.tzinfo) if dt.tzinfo else datetime.now(timezone.utc)
             delta = now - dt if now >= dt else dt - now
         except Exception:
-            delta = datetime.utcnow() - dt.replace(tzinfo=None)
+            delta = datetime.now(timezone.utc) - (dt.replace(tzinfo=None) if dt.tzinfo else dt)
         days = delta.days
         hours, rem = divmod(delta.seconds, 3600)
         minutes, seconds = divmod(rem, 60)
@@ -168,20 +179,22 @@ def get_container_info_dict(container_id: str) -> dict:
     workdir = data.get("Config", {}).get("WorkingDir", "")
     user = data.get("Config", {}).get("User", "") or "<default>"
 
-    # Networks
-    networks = list((data.get("NetworkSettings", {}) .get("Networks") or {}).keys())
+    # Networks - Enhanced network information
+    network_settings = data.get("NetworkSettings", {}) or {}
+    networks = network_settings.get("Networks", {}) or {}
+    
     # Ports
     ports = []
-    raw_ports = (data.get("NetworkSettings", {}) .get("Ports") or {}) or {}
+    raw_ports = network_settings.get("Ports", {}) or {}
     for container_port, mappings in raw_ports.items():
         if mappings:
             for m in mappings:
-                ports.append(f"{m.get('HostIp')}:{m.get('HostPort')} -> {container_port}")
+                ports.append(f"{m.get('HostIp', '0.0.0.0')}:{m.get('HostPort')} -> {container_port}")
         else:
             ports.append(f"{container_port} (internal only)")
     ports_str = ", ".join(ports) if ports else "none"
 
-    # Mounts details
+    # Mounts details - Enhanced volume information
     mounts = data.get("Mounts", []) or []
     mounts_lines = []
     for m in mounts:
@@ -189,7 +202,19 @@ def get_container_info_dict(container_id: str) -> dict:
         dst = m.get("Destination") or m.get("Target") or "<unknown>"
         mtype = m.get("Type", "bind")
         rw = "rw" if m.get("RW", m.get("ReadOnly") is False) else "ro"
-        mounts_lines.append(f"{src} -> {dst} ({mtype}, {rw})")
+        mode = m.get("Mode", "")
+        driver = m.get("Driver", "")
+        propagation = m.get("Propagation", "")
+        
+        mount_info = f"{src} -> {dst} ({mtype}, {rw}"
+        if mode:
+            mount_info += f", mode: {mode}"
+        if driver:
+            mount_info += f", driver: {driver}"
+        if propagation:
+            mount_info += f", propagation: {propagation}"
+        mount_info += ")"
+        mounts_lines.append(mount_info)
     mounts_str = "\n".join(mounts_lines) if mounts_lines else "none"
 
     # Env and labels
@@ -286,45 +311,67 @@ def get_container_info_dict(container_id: str) -> dict:
     info_dict["Workdir:"] = workdir or 'none'
     info_dict["User:"] = user
 
-    # Network / ports
-    info_dict["Networks:"] = ', '.join(networks) if networks else 'none'
+    # Enhanced Network Information
+    network_mode = hostcfg.get("NetworkMode", "default")
+    info_dict["Network Mode:"] = network_mode
+    
+    # Detailed network information for each network
+    if networks:
+        info_dict["Connected Networks:"] = ", ".join(networks.keys())
+        
+        for network_name, network_info in networks.items():
+            network_id = network_info.get("NetworkID", "")[:12]
+            ip_address = network_info.get("IPAddress", "")
+            gateway = network_info.get("Gateway", "")
+            mac_address = network_info.get("MacAddress", "")
+            ip_prefix_len = network_info.get("IPPrefixLen", "")
+            global_ipv6 = network_info.get("GlobalIPv6Address", "")
+            global_ipv6_prefix = network_info.get("GlobalIPv6PrefixLen", "")
+            
+            if ip_address:
+                info_dict[f"  {network_name} IP:"] = f"{ip_address}/{ip_prefix_len}" if ip_prefix_len else ip_address
+            if gateway:
+                info_dict[f"  {network_name} Gateway:"] = gateway
+            if mac_address:
+                info_dict[f"  {network_name} MAC:"] = mac_address
+            if global_ipv6:
+                info_dict[f"  {network_name} IPv6:"] = f"{global_ipv6}/{global_ipv6_prefix}" if global_ipv6_prefix else global_ipv6
+            if network_id:
+                info_dict[f"  {network_name} Network ID:"] = network_id
+
+    # Ports information
     info_dict["Ports:"] = ports_str
     
-    # Add detailed network information
-    network_settings = data.get("NetworkSettings", {})
-    if network_settings:
-        # Add IP Address information
-        for network_name, network_info in network_settings.get("Networks", {}).items():
-            ip_address = network_info.get("IPAddress")
-            gateway = network_info.get("Gateway")
-            mac_address = network_info.get("MacAddress")
-            if ip_address:
-                info_dict[f"IP ({network_name}):"] = ip_address
-            if gateway:
-                info_dict[f"Gateway ({network_name}):"] = gateway
-            if mac_address:
-                info_dict[f"MAC ({network_name}):"] = mac_address
-                
-        # Add DNS information
-        dns = hostcfg.get("Dns", [])
-        if dns:
-            info_dict["DNS Servers:"] = ", ".join(dns)
-            
-        dns_options = hostcfg.get("DnsOptions", [])
-        if dns_options:
-            info_dict["DNS Options:"] = ", ".join(dns_options)
-            
-        dns_search = hostcfg.get("DnsSearch", [])
-        if dns_search:
-            info_dict["DNS Search:"] = ", ".join(dns_search)
-            
-        # Add extra hosts information
-        extra_hosts = hostcfg.get("ExtraHosts", [])
-        if extra_hosts:
-            info_dict["Extra Hosts:"] = ", ".join(extra_hosts)
+    # DNS information
+    dns = hostcfg.get("Dns", [])
+    if dns:
+        info_dict["DNS Servers:"] = ", ".join(dns)
+        
+    dns_options = hostcfg.get("DnsOptions", [])
+    if dns_options:
+        info_dict["DNS Options:"] = ", ".join(dns_options)
+        
+    dns_search = hostcfg.get("DnsSearch", [])
+    if dns_search:
+        info_dict["DNS Search:"] = ", ".join(dns_search)
+        
+    # Extra hosts information
+    extra_hosts = hostcfg.get("ExtraHosts", [])
+    if extra_hosts:
+        info_dict["Extra Hosts:"] = ", ".join(extra_hosts)
 
-    # Mounts
-    info_dict["Mounts:"] = mounts_str
+    # Enhanced Mounts/Volumes Information
+    if mounts:
+        info_dict["Mounts:"] = mounts_str
+        # Count by type
+        mount_types = {}
+        for m in mounts:
+            mtype = m.get("Type", "unknown")
+            mount_types[mtype] = mount_types.get(mtype, 0) + 1
+        mount_summary = ", ".join([f"{count} {mtype}" for mtype, count in mount_types.items()])
+        info_dict["Mount Summary:"] = mount_summary
+    else:
+        info_dict["Mounts:"] = "none"
 
     # Env & labels
     if env_count:
@@ -345,5 +392,14 @@ def get_container_info_dict(container_id: str) -> dict:
     # Sizes
     info_dict["Size (rw):"] = size_rw_str
     info_dict["RootFs size:"] = size_rootfs_str
+
+    # Add container host information
+    info_dict["Hostname:"] = data.get("Config", {}).get("Hostname", "")
+    info_dict["Domainname:"] = data.get("Config", {}).get("Domainname", "") or "none"
+    
+    # Add isolation information
+    isolation = hostcfg.get("Isolation", "")
+    if isolation:
+        info_dict["Isolation:"] = isolation
 
     return info_dict

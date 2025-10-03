@@ -9,9 +9,7 @@ import asyncio
 import re
 from container_logs import stream_logs
 from container_exec import open_docker_shell, check_shell_availability
-from tabs.container_info import get_container_info_dict
 from tabs.container_info import InfoTab
-
 async def _safe_close(writer: Optional[asyncio.StreamWriter]) -> None:
     """Safely close a StreamWriter if it exists.
     

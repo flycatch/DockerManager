@@ -1,9 +1,28 @@
-/* 🟦 Info Tab Container */
+/* 🟦 Info Tab Container - Scrollable */
 #info-tab {
     margin: 0;
     padding: 0;
     background: #1e1e2e;
+    overflow-y: auto;
+    scrollbar-size: 2 1;
+    width: 100%;
+}
+
+#info-tab:focus {
+    scrollbar-color: #89b4fa #313244;
+}
+
+/* Ensure VerticalScroll takes full height */
+#info-scroll {
+    height: 100%;
+    width: 100%;
+    scrollbar-size: 2 1;
+}
+
+/* Content container should be auto height */
+.info-content {
     height: auto;
+    min-height: 100%;
 }
 
 #info-container {
@@ -11,11 +30,13 @@
     padding: 1;
     border: round #45475a;
     width: 100%;
+    height: auto;
 }
 
 /* 📄 Info Line */
 .info-line {
-    width: 70%;
+    width: 100%;
+    max-width: 100%;
     height: auto;
     margin: 0 0;
     padding: 0 1;
@@ -59,16 +80,69 @@
 }
 
 .info-line .state-restarting {
-    color: #f38ba8;  /* Critical red color */
-    text-style: bold blink;  /* Bold and blinking to indicate activity */
+    color: #f38ba8;
+    text-style: bold;
 }
 
-/* 📌 Networks and Volumes */
-.info-line .networks,
-.info-line .volumes,
-.info-line .ports {
+.info-line .state-paused {
+    color: #fab387;
+    text-style: italic;
+}
+
+.info-line .state-dead {
+    color: #f38ba8;
+    text-style: bold italic;
+}
+
+/* 📌 Enhanced styling for resource information */
+.info-line .resource-info {
     color: #cba6f7;
     text-style: none;
     text-wrap: wrap;
 }
 
+.info-line .config-info {
+    color: #94e2d5;
+    text-style: italic;
+    text-wrap: wrap;
+}
+
+/* 🎯 Network details styling */
+.network-detail {
+    color: #74c7ec;
+    text-style: italic;
+    padding-left: 2;
+}
+
+/* ✨ CREATIVE SCROLLBAR DESIGNS ✨ */
+
+/* Option 1: Neon Blue Scrollbar (Modern/Futuristic) - ACTIVE */
+ScrollBar {
+    background: $background;
+    color: $primary;
+    width: 2;
+}
+
+ScrollBar:hover {
+    background: $background;
+}
+
+ScrollBar > .scrollbar--bar {
+    color: transparent;
+    background: #11111b;
+}
+
+ScrollBar > .scrollbar--thumb {
+    color: #89b4fa;
+    background: #89b4fa;
+}
+
+ScrollBar > .scrollbar--thumb:hover {
+    color: #b4befe;
+    background: #b4befe;
+}
+
+ScrollBar:focus > .scrollbar--thumb {
+    color: #74c7ec;
+    background: #74c7ec;
+}
