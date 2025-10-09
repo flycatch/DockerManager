@@ -5,6 +5,8 @@ from textual.app import ComposeResult
 from textual.css.query import NoMatches
 
 class LoadingOverlay(Container):
+    can_focus = False
+    can_scroll = False
     """A full-screen overlay with a centered spinner and message."""
 
     def __init__(self, message: str = "Loading...", **kwargs):

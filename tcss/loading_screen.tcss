@@ -1,13 +1,18 @@
 LoadingOverlay{
     layer: overlay;
-    background: rgba(0,0,0,0.6);
+    background: #1e1e2e;
     align: center middle;
     height: 100%;
     width: 100%;
+    dock: top;                 
+    overflow: hidden;          
+    scrollbar-gutter: stable;    
+    border: round #45475a;
+    margin: 2 0;
 }
 
 .loading-message {
     color: white;
-    margin-top: 1;
+    margin: 1;
     text-style: bold;
 }
