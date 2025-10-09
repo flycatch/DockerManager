@@ -40,10 +40,10 @@ class DockerManager(App):
     
     ENABLE_COMMAND_PALETTE = False
     BINDINGS = [
-        Binding("1", "goto_uncategorized", "Standalone", show=True),
-        Binding("2", "goto_projects", "Services", show=True),
+        Binding("left", "prev_tab", "Previous Tab", show=True),
+        Binding("right", "next_tab", "Next Tab", show=True),
         Binding("tab", "toggle_focus", "Toggle Focus", show=True, key_display="Tab"),
-        Binding("q", "quit", "Quit", show=True)
+        Binding("ctrl+q", "quit", "Quit", show=True)
     ]
 
     def __init__(self):
@@ -176,16 +176,43 @@ class DockerManager(App):
             self.set_focus(self.project_tree)
 
     def action_next_tab(self) -> None:
+        """Switch to the next tab and properly focus content."""
         tabbed = self._get_tabbed()
         panes = [p for p in tabbed.query(TabPane)]
-        ids   = [p.id for p in panes if p.id]
+        ids = [p.id for p in panes if p.id]
         if not ids:
             return
         try:
             idx = ids.index(tabbed.active)
         except ValueError:
             idx = 0
-        tabbed.active = ids[(idx + 1) % len(ids)]
+        next_id = ids[(idx + 1) % len(ids)]
+        
+        if next_id == "tab-uncategorized":
+            self.action_goto_uncategorized()
+        elif next_id == "tab-projects":
+            self.action_goto_projects()
+
+
+    def action_prev_tab(self) -> None:
+        """Switch to the previous tab and properly focus content."""
+        tabbed = self._get_tabbed()
+        panes = [p for p in tabbed.query(TabPane)]
+        ids = [p.id for p in panes if p.id]
+        if not ids:
+            return
+        try:
+            idx = ids.index(tabbed.active)
+        except ValueError:
+            idx = 0
+        prev_id = ids[(idx - 1) % len(ids)]
+        
+        if prev_id == "tab-uncategorized":
+            self.action_goto_uncategorized()
+        elif prev_id == "tab-projects":
+            self.action_goto_projects()
+
+
 
     def _get_search_input(self) -> Optional[Input]:
         """Return the search Input widget from the uncategorized list."""
