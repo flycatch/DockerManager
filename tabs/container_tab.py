@@ -8,6 +8,8 @@ from textual.widgets import Select
 from cards.container_card import ContainerCard
 from container_action_menu import ContainerActionScreen
 from cards.container_header import ContainerHeader
+import asyncio
+from widget.loading_screen import LoadingOverlay
 
 class ContainersTab(Vertical, can_focus=True):
     """A container view for Docker containers with filtering and search.
@@ -301,6 +303,16 @@ class ContainersTab(Vertical, can_focus=True):
 
     def action_open_menu(self) -> None:
         if card := self._get_selected_card():
-            self.app.push_screen(
-                ContainerActionScreen(card.container_id, card.container_name)
-            )
+            overlay = LoadingOverlay(f"Opening {card.container_name}...")
+            self.app.screen.mount(overlay)  # ✅ mount to screen, not self
+            overlay.refresh(layout=True)
+            self.app.refresh()
+
+            async def _open_screen():
+                await asyncio.sleep(0.2)
+                self.app.push_screen(
+                    ContainerActionScreen(card.container_id, card.container_name)
+                )
+                await overlay.remove_self()
+
+            self.app.run_worker(_open_screen())

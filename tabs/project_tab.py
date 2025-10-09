@@ -10,6 +10,8 @@ from container_action_menu import ContainerActionScreen
 from service import (
     start_project, stop_project, delete_project, restart_project
 )
+import asyncio
+from widget.loading_screen import LoadingOverlay
 
 
 class ProjectsTab(Horizontal, can_focus=True):
@@ -221,11 +223,23 @@ class ProjectsTab(Horizontal, can_focus=True):
             return None
         return cards[self.selected_index % len(cards)]
 
+    
     def action_open_menu(self) -> None:
         if card := self._get_selected_card():
-            self.app.push_screen(
-                ContainerActionScreen(card.container_id, card.container_name)
-            )
+            overlay = LoadingOverlay(f"Opening {card.container_name}...")
+            self.app.screen.mount(overlay)  # ✅ mount to screen, not self
+            overlay.refresh(layout=True)
+            self.app.refresh()
+
+            async def _open_screen():
+                await asyncio.sleep(0.2)
+                self.app.push_screen(
+                    ContainerActionScreen(card.container_id, card.container_name)
+                )
+                await overlay.remove_self()
+
+            self.app.run_worker(_open_screen())
+
 
     def action_focus_next(self) -> None:
         cards = [c for c in self.query(ContainerCard)]
