@@ -7,22 +7,6 @@ from textual.css.query import NoMatches
 class LoadingOverlay(Container):
     """A full-screen overlay with a centered spinner and message."""
 
-    DEFAULT_CSS = """
-    LoadingOverlay {
-        layer: overlay;
-        background: rgba(0,0,0,0.6);
-        align: center middle;
-        height: 100%;
-        width: 100%;
-    }
-
-    .loading-message {
-        color: white;
-        margin-top: 1;
-        text-style: bold;
-    }
-    """
-
     def __init__(self, message: str = "Loading...", **kwargs):
         super().__init__(**kwargs)
         self.message = message

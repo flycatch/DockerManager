@@ -36,7 +36,7 @@ class DockerManager(App):
     CSS_PATH = ["../tcss/container_list.tcss", "../tcss/header.tcss","../tcss/project_search.tcss", 
                 "../tcss/filter.tcss", "../tcss/standalone_search.tcss",
                 "../tcss/project_tab.tcss","../tcss/shell.tcss","../tcss/logs.tcss",
-                "../tcss/screen.tcss","../tcss/standalone_tab.tcss","../tcss/container_info.tcss"]
+                "../tcss/screen.tcss","../tcss/standalone_tab.tcss","../tcss/container_info.tcss","../tcss/loading_screen.tcss"]
     
     ENABLE_COMMAND_PALETTE = False
     BINDINGS = [

@@ -1,0 +1,13 @@
+LoadingOverlay{
+    layer: overlay;
+    background: rgba(0,0,0,0.6);
+    align: center middle;
+    height: 100%;
+    width: 100%;
+}
+
+.loading-message {
+    color: white;
+    margin-top: 1;
+    text-style: bold;
+}
