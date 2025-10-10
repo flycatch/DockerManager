@@ -37,12 +37,6 @@
   text-wrap: wrap;
 }
 
-/* 📜 Scroll View for Logs */
-ScrollView#logs {
-  height: 1fr;
-  padding: 1;
-  background: #1e1e2e;
-  color: #cdd6f4;
-  border: round #89b4fa;
-  margin: 1 0;
+#log-scroll {
+    scrollbar-size: 2 1;
 }

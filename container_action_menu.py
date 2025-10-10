@@ -146,6 +146,8 @@ class ContainerActionScreen(ModalScreen):
         Binding("left", "switch_tab_prev", "Previous Tab"),
         Binding("right", "switch_tab_next", "Next Tab"),
         Binding("escape", "handle_escape", "Close", key_display="ESC"),
+        Binding("j", "scroll_down_universal", "Scroll Down", show=False),
+        Binding("k", "scroll_up_universal", "Scroll Up", show=False),
     ]
     
     LOGS_BINDINGS: List[BindingType] = COMMON_BINDINGS + [
@@ -154,6 +156,7 @@ class ContainerActionScreen(ModalScreen):
         Binding("p", "do_action('stop')", "Stop"),
         Binding("d", "do_action('delete')", "Delete"),
     ]
+
 
     TERMINAL_BINDINGS: List[BindingType] = COMMON_BINDINGS + [
         Binding("ctrl+l", "clear_shell", "Clear Shell"),
@@ -265,6 +268,64 @@ class ContainerActionScreen(ModalScreen):
     async def load_container_info(self):
         """Load container info - the InfoTab will handle its own data loading."""
         pass
+    
+    def action_scroll_down_universal(self) -> None:
+        """Scroll down by one line in the active tab (j key)."""
+        active_tab = self.query_one(TabbedContent).active
+        
+        if active_tab == "Logs":
+            scroll_view = self.query_one("#log-scroll", VerticalScroll)
+            scroll_view.scroll_down(animate=True)
+        elif active_tab == "Terminal":
+            # Only scroll if input is not focused
+            if not self.query_one("#shell-input").has_focus:
+                scroll_view = self.query_one("#shell-scroll", VerticalScroll)
+                scroll_view.scroll_down(animate=True)
+        elif active_tab == "info-tab":
+            # Try to find a scrollable container inside InfoTab
+            try:
+                # Option A: If InfoTab has a specific scroll container ID
+                scroll_view = self.query_one("#info-scroll", VerticalScroll)
+                scroll_view.scroll_down(animate=True)
+            except:
+                # Option B: Find any VerticalScroll or ScrollableContainer in InfoTab
+                try:
+                    info_tab = self.query_one(InfoTab)
+                    scroll_view = info_tab.query_one(VerticalScroll)
+                    scroll_view.scroll_down(animate=True)
+                except:
+                    # Option C: Scroll the InfoTab itself (if it extends ScrollView)
+                    info_tab = self.query_one(InfoTab)
+                    info_tab.scroll_down(animate=True)
+
+    def action_scroll_up_universal(self) -> None:
+        """Scroll up by one line in the active tab (k key)."""
+        active_tab = self.query_one(TabbedContent).active
+        
+        if active_tab == "Logs":
+            scroll_view = self.query_one("#log-scroll", VerticalScroll)
+            scroll_view.scroll_up(animate=True)
+        elif active_tab == "Terminal":
+            # Only scroll if input is not focused
+            if not self.query_one("#shell-input").has_focus:
+                scroll_view = self.query_one("#shell-scroll", VerticalScroll)
+                scroll_view.scroll_up(animate=True)
+        elif active_tab == "info-tab":
+            # Try to find a scrollable container inside InfoTab
+            try:
+                # Option A: If InfoTab has a specific scroll container ID
+                scroll_view = self.query_one("#info-scroll", VerticalScroll)
+                scroll_view.scroll_up(animate=True)
+            except:
+                # Option B: Find any VerticalScroll or ScrollableContainer in InfoTab
+                try:
+                    info_tab = self.query_one(InfoTab)
+                    scroll_view = info_tab.query_one(VerticalScroll)
+                    scroll_view.scroll_up(animate=True)
+                except:
+                    # Option C: Scroll the InfoTab itself (if it extends ScrollView)
+                    info_tab = self.query_one(InfoTab)
+                    info_tab.scroll_up(animate=True)
 
 
     def check_shell_availability(self):
@@ -313,7 +374,9 @@ class ContainerActionScreen(ModalScreen):
             shell_input.placeholder = "💻 Type shell command..."
             # Auto-connect if not already connected
             if not self.shell_reader:
-                self.action_open_shell()
+                # Schedule async shell connection properly
+                asyncio.create_task(self.action_open_shell())
+
 
     def focus_shell_input_if_needed(self):
         """Focus shell input if Terminal tab is active and shell is available."""
@@ -659,57 +722,51 @@ class ContainerActionScreen(ModalScreen):
             self.shell_lines.append(f"[red]Error reading shell: {e}[/red]\n")
             self.query_one("#shell-output", Static).update("".join(self.shell_lines[-1000:]))
 
-    def action_open_shell(self) -> None:
-        """Open an interactive shell connection to the container.
-        
-        This method:
-        1. Checks if shell is available in the container
-        2. Handles cleanup of existing connections
-        3. Establishes a new shell connection
-        4. Sets up the shell reader/writer
-        5. Updates UI with connection status
-        6. Auto-focuses the shell input
-        
-        Handles various error cases:
-        - Container without shell
-        - Connection failures
-        - Shell not available errors
-        """
+    async def action_open_shell(self) -> None:
+        """Open an interactive shell connection to the container."""
         if not self.shell_available:
             self.shell_lines.append("[red]No shell available in this container[/red]\n")
             self.query_one("#shell-output", Static).update("".join(self.shell_lines))
             return
 
-        async def _open():
-            if self.shell_writer:
-                await _safe_close(self.shell_writer)
-                self.shell_reader = None
-                self.shell_writer = None
+        # Clean up any previous connection
+        if self.shell_writer:
+            await _safe_close(self.shell_writer)
+            self.shell_reader = None
+            self.shell_writer = None
 
-            try:
-                self.shell_lines.clear()
-                self.shell_lines.append("[yellow]Connecting to shell...[/yellow]\n")
-                self.query_one("#shell-output", Static).update("".join(self.shell_lines))
+        try:
+            # Show connecting message
+            self.shell_lines.clear()
+            self.shell_lines.append("[yellow]Connecting to shell...[/yellow]\n")
+            self.query_one("#shell-output", Static).update("".join(self.shell_lines))
 
-                self.shell_reader, self.shell_writer = await open_docker_shell(self.container_id)
-                self.shell_lines.append("[green]Connected to shell[/green]\n")
-                self.shell_lines.append(PROMPT)  # <-- Add prompt immediately
-                self.query_one("#shell-output", Static).update("".join(self.shell_lines))
+            # Open new shell
+            self.shell_reader, self.shell_writer = await open_docker_shell(self.container_id)
 
-                if self.shell_task and not self.shell_task.done():
-                    self.shell_task.cancel()
-                self.shell_task = asyncio.create_task(self.read_shell_output())
-                self.set_focus(self.query_one("#shell-input"))
+            # Update UI
+            self.shell_lines.append("[green]Connected to shell[/green]\n")
+            self.shell_lines.append(PROMPT)  # Show prompt
+            self.query_one("#shell-output", Static).update("".join(self.shell_lines))
 
-            except Exception as e:
-                error_msg = str(e)
-                self.shell_lines.append(f"[red]Failed to connect: {error_msg}[/red]\n")
-                self.query_one("#shell-output", Static).update("".join(self.shell_lines))
-                if "no shell" in error_msg.lower() or "not running" in error_msg.lower():
-                    self.shell_available = False
-                    self.update_terminal_ui()
+            # Cancel previous shell reader task if exists
+            if self.shell_task and not self.shell_task.done():
+                self.shell_task.cancel()
 
-        asyncio.create_task(_open())
+            # Start reading shell output
+            self.shell_task = asyncio.create_task(self.read_shell_output())
+
+            # Focus input
+            self.set_focus(self.query_one("#shell-input"))
+
+        except Exception as e:
+            error_msg = str(e)
+            self.shell_lines.append(f"[red]Failed to connect: {error_msg}[/red]\n")
+            self.query_one("#shell-output", Static).update("".join(self.shell_lines))
+            if "no shell" in error_msg.lower() or "not running" in error_msg.lower():
+                self.shell_available = False
+                self.update_terminal_ui()
+
 
 
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
