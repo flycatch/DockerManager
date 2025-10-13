@@ -7,11 +7,10 @@ from rich.text import Text
 from textual.reactive import reactive
 from cards.container_card import ContainerCard
 from container_action_menu import ContainerActionScreen
-from service import (
-    start_project, stop_project, delete_project, restart_project
-)
+from service import start_project, stop_project, restart_project
+from widgets.confirm import ConfirmActionScreen
 import asyncio
-from widget.loading_screen import LoadingOverlay
+from widgets.loading_screen import LoadingOverlay
 
 
 class ProjectsTab(Horizontal, can_focus=True):
@@ -41,7 +40,6 @@ class ProjectsTab(Horizontal, can_focus=True):
         Binding("u", "start_project", "Up/Start", show=True),
         Binding("o", "stop_project", "Down/Stop", show=True),
         Binding("r", "restart_project", "Restart", show=True),
-        Binding("x", "delete_project", "Delete", show=True),
         Binding("/", "focus_search", "Search", show=True),         # open search
         Binding("escape", "clear_search", "Clear", show=False),    # clear/close search
     ]
@@ -284,35 +282,47 @@ class ProjectsTab(Horizontal, can_focus=True):
 
     def action_start_project(self) -> None:
         if project := self._get_selected_project():
-            if start_project(project):
-                self._notify("notify_success", f"Started project: {project}")
-                self._maybe_run_refresh()
-            else:
-                self._notify("notify_error", f"Failed to start project: {project}")
+            self.app.push_screen(ConfirmActionScreen(
+                f"Start project '{project}'? (Y/n)",
+                lambda confirmed: self._do_start_project(project) if confirmed else None
+            ))
+
+    def _do_start_project(self, project: str) -> None:
+        if start_project(project):
+            self._notify("notify_success", f"Started project: {project}")
+            self._maybe_run_refresh()
+        else:
+            self._notify("notify_error", f"Failed to start project: {project}")
 
     def action_stop_project(self) -> None:
         if project := self._get_selected_project():
-            if stop_project(project):
-                self._notify("notify_success", f"Stopped project: {project}")
-                self._maybe_run_refresh()
-            else:
-                self._notify("notify_error", f"Failed to stop project: {project}")
+            self.app.push_screen(ConfirmActionScreen(
+                f"Stop project '{project}'? (Y/n)",
+                lambda confirmed: self._do_stop_project(project) if confirmed else None
+            ))
+
+    def _do_stop_project(self, project: str) -> None:
+        if stop_project(project):
+            self._notify("notify_success", f"Stopped project: {project}")
+            self._maybe_run_refresh()
+        else:
+            self._notify("notify_error", f"Failed to stop project: {project}")
 
     def action_restart_project(self) -> None:
         if project := self._get_selected_project():
-            if restart_project(project):
-                self._notify("notify_success", f"Restarted project: {project}")
-                self._maybe_run_refresh()
-            else:
-                self._notify("notify_error", f"Failed to restart project: {project}")
+            self.app.push_screen(ConfirmActionScreen(
+                f"Restart project '{project}'? (Y/n)",
+                lambda confirmed: self._do_restart_project(project) if confirmed else None
+            ))
 
-    def action_delete_project(self) -> None:
-        if project := self._get_selected_project():
-            if delete_project(project):
-                self._notify("notify_success", f"Deleted project: {project}")
-                self._maybe_run_refresh()
-            else:
-                self._notify("notify_error", f"Failed to delete project: {project}")
+    def _do_restart_project(self, project: str) -> None:
+        if restart_project(project):
+            self._notify("notify_success", f"Restarted project: {project}")
+            self._maybe_run_refresh()
+        else:
+            self._notify("notify_error", f"Failed to restart project: {project}")
+
+    # Delete project action removed
 
     def action_switch_focus(self) -> None:
         """Switch focus between the project tree and the container list."""
