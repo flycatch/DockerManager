@@ -146,6 +146,8 @@ class ContainerActionScreen(ModalScreen):
         Binding("left", "switch_tab_prev", "Previous Tab"),
         Binding("right", "switch_tab_next", "Next Tab"),
         Binding("escape", "handle_escape", "Close", key_display="ESC"),
+        Binding("j", "scroll_down_universal", "Scroll Down", show=False),
+        Binding("k", "scroll_up_universal", "Scroll Up", show=False),
     ]
     
     LOGS_BINDINGS: List[BindingType] = COMMON_BINDINGS + [
@@ -154,6 +156,7 @@ class ContainerActionScreen(ModalScreen):
         Binding("p", "do_action('stop')", "Stop"),
         Binding("d", "do_action('delete')", "Delete"),
     ]
+
 
     TERMINAL_BINDINGS: List[BindingType] = COMMON_BINDINGS + [
         Binding("ctrl+l", "clear_shell", "Clear Shell"),
@@ -265,6 +268,64 @@ class ContainerActionScreen(ModalScreen):
     async def load_container_info(self):
         """Load container info - the InfoTab will handle its own data loading."""
         pass
+    
+    def action_scroll_down_universal(self) -> None:
+        """Scroll down by one line in the active tab (j key)."""
+        active_tab = self.query_one(TabbedContent).active
+        
+        if active_tab == "Logs":
+            scroll_view = self.query_one("#log-scroll", VerticalScroll)
+            scroll_view.scroll_down(animate=True)
+        elif active_tab == "Terminal":
+            # Only scroll if input is not focused
+            if not self.query_one("#shell-input").has_focus:
+                scroll_view = self.query_one("#shell-scroll", VerticalScroll)
+                scroll_view.scroll_down(animate=True)
+        elif active_tab == "info-tab":
+            # Try to find a scrollable container inside InfoTab
+            try:
+                # Option A: If InfoTab has a specific scroll container ID
+                scroll_view = self.query_one("#info-scroll", VerticalScroll)
+                scroll_view.scroll_down(animate=True)
+            except:
+                # Option B: Find any VerticalScroll or ScrollableContainer in InfoTab
+                try:
+                    info_tab = self.query_one(InfoTab)
+                    scroll_view = info_tab.query_one(VerticalScroll)
+                    scroll_view.scroll_down(animate=True)
+                except:
+                    # Option C: Scroll the InfoTab itself (if it extends ScrollView)
+                    info_tab = self.query_one(InfoTab)
+                    info_tab.scroll_down(animate=True)
+
+    def action_scroll_up_universal(self) -> None:
+        """Scroll up by one line in the active tab (k key)."""
+        active_tab = self.query_one(TabbedContent).active
+        
+        if active_tab == "Logs":
+            scroll_view = self.query_one("#log-scroll", VerticalScroll)
+            scroll_view.scroll_up(animate=True)
+        elif active_tab == "Terminal":
+            # Only scroll if input is not focused
+            if not self.query_one("#shell-input").has_focus:
+                scroll_view = self.query_one("#shell-scroll", VerticalScroll)
+                scroll_view.scroll_up(animate=True)
+        elif active_tab == "info-tab":
+            # Try to find a scrollable container inside InfoTab
+            try:
+                # Option A: If InfoTab has a specific scroll container ID
+                scroll_view = self.query_one("#info-scroll", VerticalScroll)
+                scroll_view.scroll_up(animate=True)
+            except:
+                # Option B: Find any VerticalScroll or ScrollableContainer in InfoTab
+                try:
+                    info_tab = self.query_one(InfoTab)
+                    scroll_view = info_tab.query_one(VerticalScroll)
+                    scroll_view.scroll_up(animate=True)
+                except:
+                    # Option C: Scroll the InfoTab itself (if it extends ScrollView)
+                    info_tab = self.query_one(InfoTab)
+                    info_tab.scroll_up(animate=True)
 
 
     def check_shell_availability(self):
@@ -313,7 +374,9 @@ class ContainerActionScreen(ModalScreen):
             shell_input.placeholder = "💻 Type shell command..."
             # Auto-connect if not already connected
             if not self.shell_reader:
-                self.action_open_shell()
+                # Schedule async shell connection properly
+                asyncio.create_task(self.action_open_shell())
+
 
     def focus_shell_input_if_needed(self):
         """Focus shell input if Terminal tab is active and shell is available."""
@@ -330,41 +393,39 @@ class ContainerActionScreen(ModalScreen):
             self.shell_task.cancel()
 
     def on_key(self, event: Key) -> None:
-        """Handle key press events.
-        
-        Args:
-            event: The key event containing the pressed key information
-        
-        This method handles:
-        1. Tab-specific shortcuts:
-           - '/' for filtering logs (Logs tab only)
-           - 'ctrl+l' for clearing shell (Terminal tab only)
-        2. Shell command history navigation (up/down keys)
-        3. Basic command completion (tab key)
-        
-        The behavior changes based on the active tab and input focus.
-        """
-        # Get the active tab
+        """Handle key press events, including tab switching and shell input navigation."""
         active_tab = self.query_one(TabbedContent).active
+        shell_input = self.query_one("#shell-input", Input)
+
+        # Allow left/right tab switching even if shell input is focused, unless text is selected
+        if event.key in ("left", "right") and active_tab == "Terminal" and shell_input.has_focus and not shell_input.disabled:
+            # If input has a selection, let left/right move the cursor
+            if hasattr(shell_input, "selection") and shell_input.selection and shell_input.selection[0] != shell_input.selection[1]:
+                return
+            # Otherwise, switch tabs
+            if event.key == "left":
+                self.action_switch_tab_prev()
+                event.prevent_default()
+                return
+            elif event.key == "right":
+                self.action_switch_tab_next()
+                event.prevent_default()
+                return
 
         # Handle tab-specific keyboard shortcuts
         if event.key == "/" and active_tab == "Logs":
-            # Filter shortcut only in Logs tab
             event.prevent_default()
             self.action_focus_filter()
             return
 
         if event.key == "ctrl+l" and active_tab == "Terminal":
-            # Clear shortcut only in Terminal tab
             event.prevent_default()
             self.action_clear_shell()
             return
 
-        # Handle shell input only in Terminal tab
-        shell_input = self.query_one("#shell-input", Input)
+        # Handle shell input navigation only if shell input is focused in Terminal tab
         if active_tab == "Terminal" and shell_input.has_focus and not shell_input.disabled:
             if event.key == "up":
-                # Navigate up through command history
                 if self.command_history:
                     if self.history_index == -1:
                         self.history_index = len(self.command_history) - 1
@@ -372,7 +433,6 @@ class ContainerActionScreen(ModalScreen):
                         self.history_index -= 1
                     shell_input.value = self.command_history[self.history_index]
             elif event.key == "down":
-                # Navigate down through command history
                 if self.command_history:
                     if self.history_index < len(self.command_history) - 1:
                         self.history_index += 1
@@ -381,7 +441,6 @@ class ContainerActionScreen(ModalScreen):
                         self.history_index = -1
                         shell_input.value = ""
             elif event.key == "tab":
-                # Tab completion placeholder (can be implemented later)
                 pass
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -470,22 +529,13 @@ class ContainerActionScreen(ModalScreen):
             pass
 
     def action_handle_escape(self) -> None:
-        """Two-stage Escape behavior:
-        1. Defocus input fields and hide filter
-        2. Close container screen if already on tab menu
-        """
+        """ESC always closes the screen immediately."""
         focused = self.focused
         log_filter = self.query_one("#log-filter")
-
-        # Stage 1: If any input is focused, remove focus
         if focused and hasattr(focused, "id"):
             if focused.id == "log-filter":
                 focused.add_class("hidden")
-            # Clear focus and move to tab menu
             self.set_focus(None)
-            return
-
-        # Stage 2: If no input is focused, close screen
         self.app.pop_screen()
 
     def action_focus_filter(self) -> None:
@@ -659,57 +709,51 @@ class ContainerActionScreen(ModalScreen):
             self.shell_lines.append(f"[red]Error reading shell: {e}[/red]\n")
             self.query_one("#shell-output", Static).update("".join(self.shell_lines[-1000:]))
 
-    def action_open_shell(self) -> None:
-        """Open an interactive shell connection to the container.
-        
-        This method:
-        1. Checks if shell is available in the container
-        2. Handles cleanup of existing connections
-        3. Establishes a new shell connection
-        4. Sets up the shell reader/writer
-        5. Updates UI with connection status
-        6. Auto-focuses the shell input
-        
-        Handles various error cases:
-        - Container without shell
-        - Connection failures
-        - Shell not available errors
-        """
+    async def action_open_shell(self) -> None:
+        """Open an interactive shell connection to the container."""
         if not self.shell_available:
             self.shell_lines.append("[red]No shell available in this container[/red]\n")
             self.query_one("#shell-output", Static).update("".join(self.shell_lines))
             return
 
-        async def _open():
-            if self.shell_writer:
-                await _safe_close(self.shell_writer)
-                self.shell_reader = None
-                self.shell_writer = None
+        # Clean up any previous connection
+        if self.shell_writer:
+            await _safe_close(self.shell_writer)
+            self.shell_reader = None
+            self.shell_writer = None
 
-            try:
-                self.shell_lines.clear()
-                self.shell_lines.append("[yellow]Connecting to shell...[/yellow]\n")
-                self.query_one("#shell-output", Static).update("".join(self.shell_lines))
+        try:
+            # Show connecting message
+            self.shell_lines.clear()
+            self.shell_lines.append("[yellow]Connecting to shell...[/yellow]\n")
+            self.query_one("#shell-output", Static).update("".join(self.shell_lines))
 
-                self.shell_reader, self.shell_writer = await open_docker_shell(self.container_id)
-                self.shell_lines.append("[green]Connected to shell[/green]\n")
-                self.shell_lines.append(PROMPT)  # <-- Add prompt immediately
-                self.query_one("#shell-output", Static).update("".join(self.shell_lines))
+            # Open new shell
+            self.shell_reader, self.shell_writer = await open_docker_shell(self.container_id)
 
-                if self.shell_task and not self.shell_task.done():
-                    self.shell_task.cancel()
-                self.shell_task = asyncio.create_task(self.read_shell_output())
-                self.set_focus(self.query_one("#shell-input"))
+            # Update UI
+            self.shell_lines.append("[green]Connected to shell[/green]\n")
+            self.shell_lines.append(PROMPT)  # Show prompt
+            self.query_one("#shell-output", Static).update("".join(self.shell_lines))
 
-            except Exception as e:
-                error_msg = str(e)
-                self.shell_lines.append(f"[red]Failed to connect: {error_msg}[/red]\n")
-                self.query_one("#shell-output", Static).update("".join(self.shell_lines))
-                if "no shell" in error_msg.lower() or "not running" in error_msg.lower():
-                    self.shell_available = False
-                    self.update_terminal_ui()
+            # Cancel previous shell reader task if exists
+            if self.shell_task and not self.shell_task.done():
+                self.shell_task.cancel()
 
-        asyncio.create_task(_open())
+            # Start reading shell output
+            self.shell_task = asyncio.create_task(self.read_shell_output())
+
+            # Focus input
+            self.set_focus(self.query_one("#shell-input"))
+
+        except Exception as e:
+            error_msg = str(e)
+            self.shell_lines.append(f"[red]Failed to connect: {error_msg}[/red]\n")
+            self.query_one("#shell-output", Static).update("".join(self.shell_lines))
+            if "no shell" in error_msg.lower() or "not running" in error_msg.lower():
+                self.shell_available = False
+                self.update_terminal_ui()
+
 
 
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
@@ -718,45 +762,33 @@ class ContainerActionScreen(ModalScreen):
             return
 
         self.active_tab = event.tab.id
-
-        # Bindings: Terminal uses terminal bindings, Logs uses log bindings, Info uses common bindings
-        if event.tab.id == "Terminal":
-            self.__class__.BINDINGS = self.TERMINAL_BINDINGS
-        elif event.tab.id == "Logs":
-            self.__class__.BINDINGS = self.LOGS_BINDINGS
-        else:  # Info
-            # Keep the basic common bindings so ESC / left / right still work
-            self.__class__.BINDINGS = self.COMMON_BINDINGS
-
-        # Trigger bindings update
         self.notify_bindings_change()
 
         if event.tab.id == "Terminal":
-            # Update UI based on shell availability
             if self.shell_checked:
                 self.update_terminal_ui()
-            # Focus input field after the tab switch is complete
             self.call_after_refresh(self.focus_shell_input_if_needed)
-
         elif event.tab.id == "Info":
-            # Refresh Info tab content dynamically when activated.
-            # load_container_info is async, so schedule it properly
             self.call_after_refresh(lambda: asyncio.create_task(self.load_container_info()))
-
         else:  # Logs
-            # Remove focus from inputs when switching to Logs (or Info above)
             self.set_focus(None)
 
 
     def notify_bindings_change(self) -> None:
-        """Trigger a bindings update to show or hide tab-specific bindings.
-        
-        This method forces a refresh of the footer to reflect changed keybindings.
-        It ensures that tab-specific keybindings (like '/' for filter in Logs tab
-        or 'ctrl+l' for clear in Terminal tab) are properly displayed or hidden
-        based on the active tab.
-        """
+        """Update footer keybindings based on active tab, avoiding duplicates."""
         footer = self.query_one(Footer)
+        active_tab = self.active_tab if hasattr(self, "active_tab") else None
+        # Always start with only common bindings
+        bindings = self.COMMON_BINDINGS.copy()
+        if active_tab == "Logs":
+            for b in self.LOGS_BINDINGS:
+                if b not in bindings and b not in self.COMMON_BINDINGS:
+                    bindings.append(b)
+        elif active_tab == "Terminal":
+            for b in self.TERMINAL_BINDINGS:
+                if b not in bindings and b not in self.COMMON_BINDINGS:
+                    bindings.append(b)
+        self.__class__.BINDINGS = bindings
         if footer:
             footer.refresh(layout=True)
 

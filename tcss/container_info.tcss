@@ -114,35 +114,4 @@
     padding-left: 2;
 }
 
-/* ✨ CREATIVE SCROLLBAR DESIGNS ✨ */
 
-/* Option 1: Neon Blue Scrollbar (Modern/Futuristic) - ACTIVE */
-ScrollBar {
-    background: $background;
-    color: $primary;
-    width: 2;
-}
-
-ScrollBar:hover {
-    background: $background;
-}
-
-ScrollBar > .scrollbar--bar {
-    color: transparent;
-    background: #11111b;
-}
-
-ScrollBar > .scrollbar--thumb {
-    color: #89b4fa;
-    background: #89b4fa;
-}
-
-ScrollBar > .scrollbar--thumb:hover {
-    color: #b4befe;
-    background: #b4befe;
-}
-
-ScrollBar:focus > .scrollbar--thumb {
-    color: #74c7ec;
-    background: #74c7ec;
-}
