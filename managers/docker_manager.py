@@ -12,11 +12,12 @@ from service import (
     get_projects_with_containers,
     start_container,
     stop_container,
-    delete_container,
+    restart_container
 )
 from tabs.container_tab import ContainersTab
 from tabs.project_tab import ProjectsTab
 from cards.container_header import ContainerHeader
+from widgets.loading_screen import LoadingOverlay
 
 class DockerManager(App):
     """Main application class for the Docker Manager TUI.
@@ -440,15 +441,20 @@ class DockerManager(App):
         self._do_container_action(action, cid, container_name)
 
     def _do_container_action(self, action: str, cid: str, container_name: str):
-        from widgets.loading_screen import LoadingOverlay
         overlay = None
         success = False
         notification_message = ""
         async def do_action():
             nonlocal success, notification_message
             if action == "start":
-                success = await asyncio.to_thread(start_container, cid)
-                notification_message = f"Started container: {container_name}" if success else f"Failed to start container: {container_name}"
+                overlay = LoadingOverlay(f"Starting container '{container_name}'...")
+                self.screen.mount(overlay)
+                self.refresh()
+                try:
+                    success = await asyncio.to_thread(start_container, cid)
+                    notification_message = f"Started container: {container_name}" if success else f"Failed to start container: {container_name}"
+                finally:
+                    await overlay.remove_self()
             elif action == "stop":
                 overlay = LoadingOverlay(f"Stopping container '{container_name}'...")
                 self.screen.mount(overlay)
@@ -463,7 +469,7 @@ class DockerManager(App):
                 self.screen.mount(overlay)
                 self.refresh()
                 try:
-                    success = await asyncio.to_thread(stop_container, cid) and await asyncio.to_thread(start_container, cid)
+                    success = await asyncio.to_thread(restart_container, cid)
                     notification_message = f"Restarted container: {container_name}" if success else f"Failed to restart container: {container_name}"
                 finally:
                     await overlay.remove_self()

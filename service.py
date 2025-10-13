@@ -1,13 +1,3 @@
-# service.py
-"""Docker service and container management module.
-
-This module provides high-level functions for interacting with Docker services
-and containers. It handles:
-- Container listing and grouping
-- Service status management
-- Container operations (start/stop/delete)
-- Data formatting and type safety
-"""
 
 from __future__ import annotations
 from typing import Dict, List, Tuple, Optional
@@ -246,6 +236,18 @@ def stop_container(container_id: str, timeout: Optional[int] = None) -> bool:
         params["t"] = timeout
     resp = session.post(f"{DOCKER_SOCKET_URL}/containers/{container_id}/stop", params=params)
     return resp.status_code in (204, 304)
+
+def restart_container(container_id: str, timeout: Optional[int] = None) -> bool:
+    """Restart a Docker container (stop then start).
+    Args:
+        container_id: ID or name of the container to restart
+        timeout: Seconds to wait for container to stop gracefully
+    Returns:
+        bool: True if container restarted successfully
+    """
+    stopped = stop_container(container_id, timeout)
+    started = start_container(container_id)
+    return stopped and started
 
 
 def delete_container(container_id: str, force: bool = False) -> bool:

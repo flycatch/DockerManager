@@ -155,6 +155,7 @@ class ContainerActionScreen(ModalScreen):
         Binding("/", "focus_filter", "Filter Logs"),
         Binding("s", "do_action('start')", "Start"),
         Binding("p", "do_action('stop')", "Stop"),
+        Binding("r", "do_action('restart')", "Restart"),
         # Delete binding removed
     ]
 
