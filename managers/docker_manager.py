@@ -33,10 +33,13 @@ class DockerManager(App):
     2. Services (🟢): For managing Docker Compose services and their containers
     """
     
-    CSS_PATH = ["../tcss/container_list.tcss", "../tcss/header.tcss","../tcss/project_search.tcss", 
-                "../tcss/filter.tcss", "../tcss/standalone_search.tcss",
-                "../tcss/project_tab.tcss","../tcss/shell.tcss","../tcss/logs.tcss",
-                "../tcss/screen.tcss","../tcss/standalone_tab.tcss","../tcss/container_info.tcss","../tcss/loading_screen.tcss"]
+    CSS_PATH = [
+        "../tcss/container_list.tcss", "../tcss/header.tcss", "../tcss/project_search.tcss",
+        "../tcss/filter.tcss", "../tcss/standalone_search.tcss",
+        "../tcss/project_tab.tcss", "../tcss/shell.tcss", "../tcss/logs.tcss",
+        "../tcss/screen.tcss", "../tcss/standalone_tab.tcss", "../tcss/container_info.tcss",
+        "../tcss/loading_screen.tcss", "../tcss/confirm_overlay.tcss"
+    ]
     
     ENABLE_COMMAND_PALETTE = False
     BINDINGS = [
@@ -427,35 +430,32 @@ class DockerManager(App):
         cid = message.container_id
         action = message.action
         self.disabled = False
-        
         container_name = "Unknown"
         for card in list(self.cards.values()) + list(self.uncategorized_cards.values()):
             if card.container_id == cid:
                 container_name = card.container_name
                 break
+        # Only perform the action, confirmation is handled in the action menu
+        self._do_container_action(action, cid, container_name)
 
+    def _do_container_action(self, action: str, cid: str, container_name: str):
         success = False
         notification_message = ""
-        
         if action == "start":
             success = start_container(cid)
             notification_message = f"Started container: {container_name}" if success else f"Failed to start container: {container_name}"
         elif action == "stop":
             success = stop_container(cid)
             notification_message = f"Stopped container: {container_name}" if success else f"Failed to stop container: {container_name}"
-        elif action == "delete":
-            success = delete_container(cid)
-            notification_message = f"Deleted container: {container_name}" if success else f"Failed to delete container: {container_name}"
-        elif action == "logs":
-            pass
-
-        if action != "logs" and notification_message:
+        elif action == "restart":
+            success = stop_container(cid) and start_container(cid)
+            notification_message = f"Restarted container: {container_name}" if success else f"Failed to restart container: {container_name}"
+        if notification_message:
             if success:
                 self.notify_success(notification_message)
             else:
                 self.notify_error(notification_message)
-
-        await self.refresh_projects()
+        self.run_worker(self.refresh_projects, exclusive=True, group="refresh")
         self.set_timer(0.05, lambda: self.run_worker(self.refresh_projects, exclusive=True, group="refresh"))
     
     def get_selected_project(self) -> str | None:

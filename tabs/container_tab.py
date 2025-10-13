@@ -9,7 +9,7 @@ from cards.container_card import ContainerCard
 from container_action_menu import ContainerActionScreen
 from cards.container_header import ContainerHeader
 import asyncio
-from widget.loading_screen import LoadingOverlay
+from widgets.loading_screen import LoadingOverlay
 
 class ContainersTab(Vertical, can_focus=True):
     """A container view for Docker containers with filtering and search.

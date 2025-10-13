@@ -1,3 +1,4 @@
+from widgets.confirm import ConfirmActionScreen
 from textual.screen import ModalScreen
 from textual.widgets import Static, Input, Footer, TabbedContent, TabPane
 from textual.message import Message
@@ -154,7 +155,7 @@ class ContainerActionScreen(ModalScreen):
         Binding("/", "focus_filter", "Filter Logs"),
         Binding("s", "do_action('start')", "Start"),
         Binding("p", "do_action('stop')", "Stop"),
-        Binding("d", "do_action('delete')", "Delete"),
+        # Delete binding removed
     ]
 
 
@@ -793,6 +794,19 @@ class ContainerActionScreen(ModalScreen):
             footer.refresh(layout=True)
 
     def action_do_action(self, action_name: str):
+        if action_name in ("start", "stop"):
+            self.app.push_screen(ConfirmActionScreen(
+                f"{action_name.capitalize()} container '{self.container_name}'? (Y/n)",
+                lambda confirmed: self._do_container_action(action_name) if confirmed else None
+            ))
+        elif action_name == "restart":
+            self.app.push_screen(ConfirmActionScreen(
+                f"Restart container '{self.container_name}'? (Y/n)",
+                lambda confirmed: self._do_container_action(action_name) if confirmed else None
+            ))
+        # Delete action removed
+
+    def _do_container_action(self, action_name: str):
         self.post_message(self.Selected(action_name, self.container_id))
         self.app.pop_screen()
 

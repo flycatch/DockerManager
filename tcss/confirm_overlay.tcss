@@ -1,0 +1,20 @@
+/* confirm_overlay.tcss: Styles for confirmation dialog overlay */
+
+#confirm-overlay.confirm-overlay {
+    layer: overlay;
+    align: center middle;
+    width: 30% ;
+    height: 10%;
+    background: #1e1e2e;
+    border: round #89b4fa;
+    padding: 0;
+    margin: 1 0;
+    content-align: center middle;
+}
+
+.confirm-message {
+    color: #89b4fa;
+    text-style: bold;
+    content-align: center middle;
+    margin: 0;
+}
