@@ -288,11 +288,20 @@ class ProjectsTab(Horizontal, can_focus=True):
             ))
 
     def _do_start_project(self, project: str) -> None:
-        if start_project(project):
-            self._notify("notify_success", f"Started project: {project}")
-            self._maybe_run_refresh()
-        else:
-            self._notify("notify_error", f"Failed to start project: {project}")
+        overlay = LoadingOverlay(f"Starting project '{project}'...")
+        self.app.screen.mount(overlay)
+        self.app.refresh()
+        async def do_start():
+            try:
+                result = await asyncio.to_thread(start_project, project)
+                if result:
+                    self._notify("notify_success", f"Started project: {project}")
+                    self._maybe_run_refresh()
+                else:
+                    self._notify("notify_error", f"Failed to start project: {project}")
+            finally:
+                await overlay.remove_self()
+        self.app.run_worker(do_start())
 
     def action_stop_project(self) -> None:
         if project := self._get_selected_project():
@@ -302,11 +311,20 @@ class ProjectsTab(Horizontal, can_focus=True):
             ))
 
     def _do_stop_project(self, project: str) -> None:
-        if stop_project(project):
-            self._notify("notify_success", f"Stopped project: {project}")
-            self._maybe_run_refresh()
-        else:
-            self._notify("notify_error", f"Failed to stop project: {project}")
+        overlay = LoadingOverlay(f"Stopping project '{project}'...")
+        self.app.screen.mount(overlay)
+        self.app.refresh()
+        async def do_stop():
+            try:
+                result = await asyncio.to_thread(stop_project, project)
+                if result:
+                    self._notify("notify_success", f"Stopped project: {project}")
+                    self._maybe_run_refresh()
+                else:
+                    self._notify("notify_error", f"Failed to stop project: {project}")
+            finally:
+                await overlay.remove_self()
+        self.app.run_worker(do_stop())
 
     def action_restart_project(self) -> None:
         if project := self._get_selected_project():
@@ -316,11 +334,20 @@ class ProjectsTab(Horizontal, can_focus=True):
             ))
 
     def _do_restart_project(self, project: str) -> None:
-        if restart_project(project):
-            self._notify("notify_success", f"Restarted project: {project}")
-            self._maybe_run_refresh()
-        else:
-            self._notify("notify_error", f"Failed to restart project: {project}")
+        overlay = LoadingOverlay(f"Restarting project '{project}'...")
+        self.app.screen.mount(overlay)
+        self.app.refresh()
+        async def do_restart():
+            try:
+                result = await asyncio.to_thread(restart_project, project)
+                if result:
+                    self._notify("notify_success", f"Restarted project: {project}")
+                    self._maybe_run_refresh()
+                else:
+                    self._notify("notify_error", f"Failed to restart project: {project}")
+            finally:
+                await overlay.remove_self()
+        self.app.run_worker(do_restart())
 
     # Delete project action removed
 
