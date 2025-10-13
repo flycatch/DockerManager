@@ -1,4 +1,5 @@
 from textual.binding import Binding
+import asyncio
 from typing import Dict, Any, Optional
 from textual.app import ComposeResult, App
 from textual.widgets import TabbedContent, TabPane, Tree, Footer, Input
@@ -11,11 +12,12 @@ from service import (
     get_projects_with_containers,
     start_container,
     stop_container,
-    delete_container,
+    restart_container
 )
 from tabs.container_tab import ContainersTab
 from tabs.project_tab import ProjectsTab
 from cards.container_header import ContainerHeader
+from widgets.loading_screen import LoadingOverlay
 
 class DockerManager(App):
     """Main application class for the Docker Manager TUI.
@@ -439,24 +441,46 @@ class DockerManager(App):
         self._do_container_action(action, cid, container_name)
 
     def _do_container_action(self, action: str, cid: str, container_name: str):
+        overlay = None
         success = False
         notification_message = ""
-        if action == "start":
-            success = start_container(cid)
-            notification_message = f"Started container: {container_name}" if success else f"Failed to start container: {container_name}"
-        elif action == "stop":
-            success = stop_container(cid)
-            notification_message = f"Stopped container: {container_name}" if success else f"Failed to stop container: {container_name}"
-        elif action == "restart":
-            success = stop_container(cid) and start_container(cid)
-            notification_message = f"Restarted container: {container_name}" if success else f"Failed to restart container: {container_name}"
-        if notification_message:
-            if success:
-                self.notify_success(notification_message)
-            else:
-                self.notify_error(notification_message)
-        self.run_worker(self.refresh_projects, exclusive=True, group="refresh")
-        self.set_timer(0.05, lambda: self.run_worker(self.refresh_projects, exclusive=True, group="refresh"))
+        async def do_action():
+            nonlocal success, notification_message
+            if action == "start":
+                overlay = LoadingOverlay(f"Starting container '{container_name}'...")
+                self.screen.mount(overlay)
+                self.refresh()
+                try:
+                    success = await asyncio.to_thread(start_container, cid)
+                    notification_message = f"Started container: {container_name}" if success else f"Failed to start container: {container_name}"
+                finally:
+                    await overlay.remove_self()
+            elif action == "stop":
+                overlay = LoadingOverlay(f"Stopping container '{container_name}'...")
+                self.screen.mount(overlay)
+                self.refresh()
+                try:
+                    success = await asyncio.to_thread(stop_container, cid)
+                    notification_message = f"Stopped container: {container_name}" if success else f"Failed to stop container: {container_name}"
+                finally:
+                    await overlay.remove_self()
+            elif action == "restart":
+                overlay = LoadingOverlay(f"Restarting container '{container_name}'...")
+                self.screen.mount(overlay)
+                self.refresh()
+                try:
+                    success = await asyncio.to_thread(restart_container, cid)
+                    notification_message = f"Restarted container: {container_name}" if success else f"Failed to restart container: {container_name}"
+                finally:
+                    await overlay.remove_self()
+            if notification_message:
+                if success:
+                    self.notify_success(notification_message)
+                else:
+                    self.notify_error(notification_message)
+            self.run_worker(self.refresh_projects, exclusive=True, group="refresh")
+            self.set_timer(0.05, lambda: self.run_worker(self.refresh_projects, exclusive=True, group="refresh"))
+        self.run_worker(do_action())
     
     def get_selected_project(self) -> str | None:
         """Return the currently selected project name from the tree."""

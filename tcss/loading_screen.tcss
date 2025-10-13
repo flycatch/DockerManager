@@ -8,7 +8,7 @@ LoadingOverlay{
     overflow: hidden;          
     scrollbar-gutter: stable;    
     border: round #45475a;
-    margin: 2 0;
+    margin: 0 0;
 }
 
 .loading-message {
