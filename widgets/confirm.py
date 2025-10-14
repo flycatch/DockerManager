@@ -5,8 +5,10 @@ from typing import Callable
 
 class ConfirmActionScreen(ModalScreen):
     BINDINGS = [
-        Binding("y", "confirm_yes", "Yes", show=True),
-        Binding("n", "confirm_no", "No", show=True),
+        Binding("y", "confirm_yes", "Yes", show=True, key_display="y/Y"),
+        Binding("Y", "confirm_yes", "Yes", show=False),
+        Binding("n", "confirm_no", "No", show=True, key_display="n/N"),
+        Binding("N", "confirm_no", "No", show=False),
         Binding("escape", "confirm_no", "Cancel", show=False),
     ]
 
