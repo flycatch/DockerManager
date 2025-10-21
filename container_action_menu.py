@@ -153,6 +153,8 @@ class ContainerActionScreen(ModalScreen):
     
     LOGS_BINDINGS: List[BindingType] = COMMON_BINDINGS + [
         Binding("/", "focus_filter", "Filter Logs"),
+        Binding("n", "next_match", "Next Match"),
+        Binding("N", "prev_match", "Prev Match"),
         Binding("s", "do_action('start')", "Start"),
         Binding("p", "do_action('stop')", "Stop"),
         Binding("r", "do_action('restart')", "Restart"),
@@ -200,6 +202,10 @@ class ContainerActionScreen(ModalScreen):
         self.shell_available = False
         self.shell_checked = False
         self.active_tab = "Logs"
+        # Search/match state for Vim-like navigation
+        # Each match is a dict: {"line_index": int, "start": int, "end": int}
+        self.log_matches: list[dict] = []
+        self.current_match: int = -1
 
     def compose(self):
         """Compose the UI layout of the container action screen.
@@ -445,6 +451,25 @@ class ContainerActionScreen(ModalScreen):
             elif event.key == "tab":
                 pass
 
+        # Vim-like search navigation in Logs tab
+        if self.query_one(TabbedContent).active == "Logs" and event.key in ("n", "N"):
+            # If there are no matches, ring bell
+            if not self.log_matches:
+                self.app.bell()
+                return
+            # Move forward/backward through matches
+            if event.key == "n":
+                self.current_match = (self.current_match + 1) % len(self.log_matches) if self.current_match >= 0 else 0
+            else:
+                if self.current_match <= 0:
+                    self.current_match = len(self.log_matches) - 1
+                else:
+                    self.current_match = (self.current_match - 1) % len(self.log_matches)
+            # Update view to focus the currently selected match
+            self.focus_current_match()
+            event.prevent_default()
+            return
+
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle submitted shell commands.
         
@@ -464,6 +489,45 @@ class ContainerActionScreen(ModalScreen):
         try:
             command = event.value.strip()
             input_widget = event.input
+            # If this is the log filter input, finalize the search and focus first match
+            if input_widget.id == "log-filter":
+                # Don't clear the input so user can see what they searched for,
+                # but update internal filter state and compute matches
+                self.filter_text = command.lower()
+                # Recompute matches and set current_match to first match if present
+                self.log_matches = []
+                if self.filter_text:
+                    ft = self.filter_text
+                    recent = self.log_lines[-200:]
+                    filtered_lines = [
+                        (i, line) for i, line in enumerate(recent) if self.filter_text in line.lower()
+                    ]
+                    for idx, (_, line) in enumerate(filtered_lines):
+                        low = line.lower()
+                        start = 0
+                        while True:
+                            pos = low.find(ft, start)
+                            if pos == -1:
+                                break
+                            abs_index = filtered_lines[idx][0]
+                            self.log_matches.append({"line_index": abs_index, "start": pos, "end": pos + len(ft)})
+                            start = pos + len(ft)
+
+                # Select first match if any
+                self.current_match = 0 if self.log_matches else -1
+                # Hide filter and move focus back to logs
+                try:
+                    input_widget.add_class("hidden")
+                except Exception:
+                    pass
+                self.set_focus(None)
+                # Refresh logs to show highlight and focus the current match
+                self.refresh_logs()
+                if self.current_match != -1:
+                    self.focus_current_match()
+                return
+
+            # Otherwise treat as shell input submission
             input_widget.value = ""  # clear input box
 
             if not command:
@@ -574,12 +638,44 @@ class ContainerActionScreen(ModalScreen):
         log_output = self.query_one("#log-output", Static)
 
         at_bottom = scroll_view.scroll_y + scroll_view.size.height >= scroll_view.virtual_size.height - 1
-        filtered = [
-            self.colorize_log(line)
-            for line in self.log_lines[-200:]
-            if not self.filter_text or self.filter_text in line.lower()
+        # Build filtered list (keep original lines for match indexing)
+        recent = self.log_lines[-200:]
+        filtered_lines: list[tuple[int,str]] = [
+            (i, line) for i, line in enumerate(recent) if not self.filter_text or self.filter_text in line.lower()
         ]
-        log_output.update("\n".join(filtered))
+
+        # Recompute matches for navigation
+        self.log_matches = []
+        if self.filter_text:
+            ft = self.filter_text
+            for idx, (_, line) in enumerate(filtered_lines):
+                low = line.lower()
+                start = 0
+                while True:
+                    pos = low.find(ft, start)
+                    if pos == -1:
+                        break
+                    # Store absolute index in recent buffer
+                    abs_index = filtered_lines[idx][0]
+                    self.log_matches.append({"line_index": abs_index, "start": pos, "end": pos + len(ft)})
+                    start = pos + len(ft)
+
+        # If current_match is out of range, reset
+        if self.current_match >= len(self.log_matches):
+            self.current_match = -1
+
+        # Render lines with colorization and highlight if match
+        rendered: list[str] = []
+        for i, line in filtered_lines:
+            # Determine if this line contains the currently selected match
+            highlight_span = None
+            if self.current_match != -1 and self.log_matches:
+                m = self.log_matches[self.current_match]
+                if m["line_index"] == i:
+                    highlight_span = (m["start"], m["end"]) 
+            rendered.append(self.colorize_log(line, highlight_span))
+
+        log_output.update("\n".join(rendered))
         if at_bottom:
             scroll_view.scroll_end(animate=False)
 
@@ -945,7 +1041,7 @@ class ContainerActionScreen(ModalScreen):
             self.app.bell()
 
 
-    def colorize_log(self, line: str) -> str:
+    def colorize_log(self, line: str, highlight_span: tuple[int,int] | None = None) -> str:
         """Apply color formatting to log lines based on log level.
         
         Args:
@@ -963,15 +1059,67 @@ class ContainerActionScreen(ModalScreen):
         """
         escaped_line = re.sub(r"([\[\]])", r"\\\1", line)
         upper = escaped_line.upper()
+        # Apply highlight if requested by wrapping the matched span with reverse/bold
+        if highlight_span:
+            s, e = highlight_span
+            # Guard bounds
+            s = max(0, min(s, len(escaped_line)))
+            e = max(s, min(e, len(escaped_line)))
+            highlighted = (
+                escaped_line[:s]
+                + "[reverse][bold]"
+                + escaped_line[s:e]
+                + "[/bold][/reverse]"
+                + escaped_line[e:]
+            )
+        else:
+            highlighted = escaped_line
+
         if "ERROR" in upper or "FATAL" in upper:
-            return f"[red]{escaped_line}[/red]"
+            return f"[red]{highlighted}[/red]"
         elif "WARN" in upper:
-            return f"[yellow]{escaped_line}[/yellow]"
+            return f"[yellow]{highlighted}[/yellow]"
         elif "INFO" in upper:
-            return f"[green]{escaped_line}[/green]"
+            return f"[green]{highlighted}[/green]"
         elif "DEBUG" in upper:
-            return f"[blue]{escaped_line}[/blue]"
-        return escaped_line
+            return f"[blue]{highlighted}[/blue]"
+        return highlighted
+
+    def focus_current_match(self) -> None:
+        """Scroll the log view to the currently selected match and set focus."""
+        if self.current_match == -1 or not self.log_matches:
+            return
+        match = self.log_matches[self.current_match]
+        # The filtered buffer used in refresh_logs is the last 200 lines slice, indexes are relative to that slice
+        line_idx = match["line_index"]
+        try:
+            scroll_view = self.query_one("#log-scroll", VerticalScroll)
+            # Use widget.scroll_to to bring line into view; compute y coordinate by line number
+            # Approximate: assume each line is 1 unit tall. Textual's scroll_to accepts x,y in pixels/units.
+            scroll_view.scroll_to(0, line_idx, animate=False)
+            # Refresh rendering so highlight shows
+            self.refresh_logs()
+        except Exception:
+            pass
+
+    def action_next_match(self) -> None:
+        """Action wrapper to go to next match (for binding)."""
+        if not self.log_matches:
+            self.app.bell()
+            return
+        self.current_match = (self.current_match + 1) % len(self.log_matches) if self.current_match >= 0 else 0
+        self.focus_current_match()
+
+    def action_prev_match(self) -> None:
+        """Action wrapper to go to previous match (for binding)."""
+        if not self.log_matches:
+            self.app.bell()
+            return
+        if self.current_match <= 0:
+            self.current_match = len(self.log_matches) - 1
+        else:
+            self.current_match = (self.current_match - 1) % len(self.log_matches)
+        self.focus_current_match()
 
 
 
