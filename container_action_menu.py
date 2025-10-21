@@ -513,8 +513,9 @@ class ContainerActionScreen(ModalScreen):
                             self.log_matches.append({"line_index": abs_index, "start": pos, "end": pos + len(ft)})
                             start = pos + len(ft)
 
-                # Select first match if any
-                self.current_match = 0 if self.log_matches else -1
+                # Select latest (most recent) match if any — choose the last match so view jumps
+                # to the most recent occurrence by default (Vim's '/' often focuses forward)
+                self.current_match = len(self.log_matches) - 1 if self.log_matches else -1
                 # Hide filter and move focus back to logs
                 try:
                     input_widget.add_class("hidden")
@@ -638,42 +639,45 @@ class ContainerActionScreen(ModalScreen):
         log_output = self.query_one("#log-output", Static)
 
         at_bottom = scroll_view.scroll_y + scroll_view.size.height >= scroll_view.virtual_size.height - 1
-        # Build filtered list (keep original lines for match indexing)
+        # Build recent buffer (render full buffer so we highlight inline in the log view)
         recent = self.log_lines[-200:]
-        filtered_lines: list[tuple[int,str]] = [
-            (i, line) for i, line in enumerate(recent) if not self.filter_text or self.filter_text in line.lower()
-        ]
 
-        # Recompute matches for navigation
+        # Recompute matches for navigation and per-line spans
         self.log_matches = []
+        matches_by_line: dict[int, list[tuple[int,int,int]]] = {}  # line_idx -> list of (s,e,match_index)
         if self.filter_text:
             ft = self.filter_text
-            for idx, (_, line) in enumerate(filtered_lines):
+            match_index = 0
+            for idx, line in enumerate(recent):
                 low = line.lower()
                 start = 0
                 while True:
                     pos = low.find(ft, start)
                     if pos == -1:
                         break
-                    # Store absolute index in recent buffer
-                    abs_index = filtered_lines[idx][0]
-                    self.log_matches.append({"line_index": abs_index, "start": pos, "end": pos + len(ft)})
+                    # Record match: line index in recent buffer
+                    self.log_matches.append({"line_index": idx, "start": pos, "end": pos + len(ft)})
+                    matches_by_line.setdefault(idx, []).append((pos, pos + len(ft), match_index))
+                    match_index += 1
                     start = pos + len(ft)
 
         # If current_match is out of range, reset
         if self.current_match >= len(self.log_matches):
             self.current_match = -1
 
-        # Render lines with colorization and highlight if match
+        # Render the full recent buffer and highlight inline
         rendered: list[str] = []
-        for i, line in filtered_lines:
-            # Determine if this line contains the currently selected match
-            highlight_span = None
-            if self.current_match != -1 and self.log_matches:
-                m = self.log_matches[self.current_match]
-                if m["line_index"] == i:
-                    highlight_span = (m["start"], m["end"]) 
-            rendered.append(self.colorize_log(line, highlight_span))
+        for i, line in enumerate(recent):
+            spans: list[tuple[int,int,bool]] = []
+            if i in matches_by_line:
+                for s, e, midx in matches_by_line[i]:
+                    is_current = (midx == self.current_match)
+                    spans.append((s, e, is_current))
+            # If there are spans, pass them; else pass None
+            if spans:
+                rendered.append(self.colorize_log(line, None if not spans else spans))
+            else:
+                rendered.append(self.colorize_log(line, None))
 
         log_output.update("\n".join(rendered))
         if at_bottom:
@@ -1041,7 +1045,7 @@ class ContainerActionScreen(ModalScreen):
             self.app.bell()
 
 
-    def colorize_log(self, line: str, highlight_span: tuple[int,int] | None = None) -> str:
+    def colorize_log(self, line: str, highlight_span: Any = None) -> str:
         """Apply color formatting to log lines based on log level.
         
         Args:
@@ -1057,23 +1061,79 @@ class ContainerActionScreen(ModalScreen):
         Also escapes any existing square brackets in the text to prevent
         interference with Textual markup.
         """
-        escaped_line = re.sub(r"([\[\]])", r"\\\1", line)
-        upper = escaped_line.upper()
-        # Apply highlight if requested by wrapping the matched span with reverse/bold
-        if highlight_span:
+        # New behavior: accept multiple spans per line in the form of
+        # a list of tuples: (start, end, is_current)
+        # For backward compatibility the old single highlight_span param may be None
+        # We'll normalize to the new format here.
+        upper = line.upper()
+
+        def _escape(s: str) -> str:
+            # Escape square brackets so Textual markup isn't broken
+            return re.sub(r"([\[\]])", r"\\\1", s)
+
+        # Normalize highlight_span into a list of (start,end,is_current)
+        spans: list[tuple[int,int,bool]] = []
+        if isinstance(highlight_span, tuple):
             s, e = highlight_span
-            # Guard bounds
-            s = max(0, min(s, len(escaped_line)))
-            e = max(s, min(e, len(escaped_line)))
-            highlighted = (
-                escaped_line[:s]
-                + "[reverse][bold]"
-                + escaped_line[s:e]
-                + "[/bold][/reverse]"
-                + escaped_line[e:]
-            )
-        else:
-            highlighted = escaped_line
+            spans = [(int(s), int(e), True)]
+        elif isinstance(highlight_span, list):
+            # assume list of (start, end, is_current) or (start,end)
+            for item in highlight_span:
+                if isinstance(item, tuple) and len(item) >= 2:
+                    s = int(item[0])
+                    e = int(item[1])
+                    is_cur = bool(item[2]) if len(item) > 2 else False
+                    spans.append((s, e, is_cur))
+
+        # If no spans, just escape and colorize whole line
+        if not spans:
+            escaped_line = _escape(line)
+            if "ERROR" in upper or "FATAL" in upper:
+                return f"[red]{escaped_line}[/red]"
+            elif "WARN" in upper:
+                return f"[yellow]{escaped_line}[/yellow]"
+            elif "INFO" in upper:
+                return f"[green]{escaped_line}[/green]"
+            elif "DEBUG" in upper:
+                return f"[blue]{escaped_line}[/blue]"
+            return escaped_line
+
+        # Otherwise build the highlighted line by slicing the original (unescaped) text
+        # and escaping each segment separately so indices remain valid.
+        # Merge/clip overlapping spans to avoid malformed markup
+        spans_sorted = sorted(spans, key=lambda x: x[0])
+        merged: list[tuple[int,int,bool]] = []
+        for s, e, is_cur in spans_sorted:
+            s = max(0, s)
+            e = max(s, e)
+            if not merged:
+                merged.append((s, e, is_cur))
+                continue
+            last_s, last_e, last_cur = merged[-1]
+            if s <= last_e:  # overlap or adjacent
+                # extend the last span's end and mark current if either is current
+                merged[-1] = (last_s, max(last_e, e), last_cur or is_cur)
+            else:
+                merged.append((s, e, is_cur))
+
+        out_parts: list[str] = []
+        prev = 0
+        for s, e, is_cur in merged:
+            # append non-highlighted segment
+            if s > prev:
+                out_parts.append(_escape(line[prev:s]))
+            # append highlighted segment
+            seg = _escape(line[s:e])
+            if is_cur:
+                out_parts.append(f"[reverse][bold]{seg}[/bold][/reverse]")
+            else:
+                out_parts.append(f"[underline]{seg}[/underline]")
+            prev = e
+        # append tail
+        if prev < len(line):
+            out_parts.append(_escape(line[prev:]))
+
+        highlighted = "".join(out_parts)
 
         if "ERROR" in upper or "FATAL" in upper:
             return f"[red]{highlighted}[/red]"
@@ -1094,11 +1154,28 @@ class ContainerActionScreen(ModalScreen):
         line_idx = match["line_index"]
         try:
             scroll_view = self.query_one("#log-scroll", VerticalScroll)
-            # Use widget.scroll_to to bring line into view; compute y coordinate by line number
-            # Approximate: assume each line is 1 unit tall. Textual's scroll_to accepts x,y in pixels/units.
-            scroll_view.scroll_to(0, line_idx, animate=False)
-            # Refresh rendering so highlight shows
+            # Refresh rendering first so virtual_size is up-to-date
             self.refresh_logs()
+            # Now compute a proportional scroll position based on virtual_size
+            try:
+                virtual_height = max(1, scroll_view.virtual_size.height)
+                view_height = max(1, scroll_view.size.height)
+                total_lines = max(1, len(self.log_lines[-200:]))
+                # fraction through buffer
+                frac = line_idx / max(1, total_lines - 1)
+                max_scroll = max(0, virtual_height - view_height)
+                y = int(max_scroll * frac)
+            except Exception:
+                y = max(0, line_idx)
+            scroll_view.scroll_to(0, y, animate=False)
+            # Set focus to the log-scroll so user sees the highlight and further n/N keys are handled
+            try:
+                self.set_focus(scroll_view)
+            except Exception:
+                try:
+                    self.set_focus(self.query_one("#log-output", Static))
+                except Exception:
+                    pass
         except Exception:
             pass
 
