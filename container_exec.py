@@ -1,7 +1,3 @@
-from textual import events
-from textual_terminal import Terminal
-from textual.app import ComposeResult
-from textual.widgets import Static
 
 from textual import events
 from textual_terminal import Terminal
@@ -15,7 +11,7 @@ async def patched_on_key(self, event: events.Key) -> None:
     if self.emulator is None:
         return
 
-    if event.key == "ctrl+f1":
+    if event.key == "shift+escape":
         # Release focus
         self.app.set_focus(None)
         return
@@ -55,7 +51,8 @@ class ContainerShell(Static):
         yield self.terminal
 
     def on_mount(self) -> None:
-        """Start and focus the terminal when mounted."""
+        """Start the terminal when mounted. Focus is handled by the parent screen
+        when the Terminal tab becomes active so the terminal doesn't steal focus
+        on initial mount."""
         if self.terminal:
             self.terminal.start()
-            self.call_after_refresh(lambda: self.app.set_focus(self.terminal))

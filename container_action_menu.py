@@ -8,10 +8,12 @@ from textual.containers import VerticalScroll
 from textual.events import Key
 from typing import List, Any
 import asyncio
+import time
 import re
 from container_logs import stream_logs
 from tabs.container_info import InfoTab
 from container_exec import ContainerShell
+from logger import log
 
 class ContainerActionScreen(ModalScreen):
     CSS_PATH = "tcss/shell.tcss"
@@ -19,21 +21,24 @@ class ContainerActionScreen(ModalScreen):
         Binding("left", "switch_tab_prev", "Previous Tab"),
         Binding("right", "switch_tab_next", "Next Tab"),
         Binding("escape", "handle_escape", "Close", key_display="ESC"),
-        Binding("j", "scroll_down_universal", "Scroll Down", show=False),
-        Binding("k", "scroll_up_universal", "Scroll Up", show=False),
+        Binding("s", "do_action('start')", "Start"),
+        Binding("p", "do_action('stop')", "Stop"),
+        Binding("r", "do_action('restart')", "Restart"),
     ]
     
     LOGS_BINDINGS: List[BindingType] = COMMON_BINDINGS + [
         Binding("/", "focus_filter", "Filter Logs"),
         Binding("n", "next_match", "Next Match"),
         Binding("N", "prev_match", "Prev Match"),
-        Binding("s", "do_action('start')", "Start"),
-        Binding("p", "do_action('stop')", "Stop"),
-        Binding("r", "do_action('restart')", "Restart"),
     ]
     
-    TERMINAL_BINDINGS: List[BindingType] = COMMON_BINDINGS.copy()
-    # You could add more bindings for terminal if needed
+    TERMINAL_BINDINGS: List[BindingType] = [
+        Binding("left", "switch_tab_prev", "Previous Tab"),
+        Binding("right", "switch_tab_next", "Next Tab"),
+        Binding("escape", "handle_escape", "Close", key_display="ESC"),
+    ]
+    
+    INFO_BINDINGS: List[BindingType] = COMMON_BINDINGS.copy()
     
     BINDINGS: List[BindingType] = LOGS_BINDINGS.copy()
     
@@ -55,6 +60,10 @@ class ContainerActionScreen(ModalScreen):
         self.active_tab = "Logs"
         self.log_matches: list[dict] = []
         self.current_match: int = -1
+        # timestamp of last tab activation handled here; used to suppress
+        # noisy notify_bindings_change calls that race with TabActivated.
+        self._last_activation: float = 0.0
+        self._saved_app_bindings = None
     
     def compose(self):
         with TabbedContent():
@@ -82,7 +91,7 @@ class ContainerActionScreen(ModalScreen):
             tc = self.query_one(TabbedContent)
             tc.active = "Logs"
             self.active_tab = "Logs"
-            self.__class__.BINDINGS = self.LOGS_BINDINGS
+            self._apply_bindings(self.LOGS_BINDINGS)
             self.notify_bindings_change()
             self.call_after_refresh(lambda: self.set_focus(self.query_one("#log-scroll")))
         except Exception:
@@ -129,6 +138,47 @@ class ContainerActionScreen(ModalScreen):
 
     async def on_unmount(self) -> None:
         self.keep_streaming = False
+        self._restore_app_bindings()
+
+    def _refresh_footer(self) -> None:
+        try:
+            footer = self.query_one(Footer)
+            footer.refresh()
+            self.refresh()
+        except Exception:
+            pass
+
+    def _apply_bindings(self, bindings: List[BindingType]) -> None:
+        binding_list = list(bindings)
+        self.BINDINGS = binding_list
+        try:
+            if hasattr(self.app, "BINDINGS"):
+                if self._saved_app_bindings is None:
+                    current = getattr(self.app, "BINDINGS", None)
+                    if current is not None:
+                        try:
+                            self._saved_app_bindings = list(current)
+                        except TypeError:
+                            self._saved_app_bindings = []
+                    else:
+                        self._saved_app_bindings = []
+                setattr(self.app, "BINDINGS", binding_list)  # type: ignore[attr-defined]
+            log("Applied bindings: " + ", ".join(getattr(b, "description", str(b)) for b in binding_list))
+        except Exception:
+            pass
+        self._refresh_footer()
+
+    def _restore_app_bindings(self) -> None:
+        if self._saved_app_bindings is None:
+            return
+        try:
+            if hasattr(self.app, "BINDINGS"):
+                setattr(self.app, "BINDINGS", list(self._saved_app_bindings))  # type: ignore[attr-defined]
+            log("Restored app bindings")
+        except Exception:
+            pass
+        self._saved_app_bindings = None
+        self._refresh_footer()
 
     def on_key(self, event: Key) -> None:
         active_tab = self.query_one(TabbedContent).active
@@ -193,6 +243,7 @@ class ContainerActionScreen(ModalScreen):
             if focused.id == "log-filter":
                 focused.add_class("hidden")
             self.set_focus(None)
+        self._restore_app_bindings()
         self.app.pop_screen()
 
     def action_focus_filter(self) -> None:
@@ -259,30 +310,83 @@ class ContainerActionScreen(ModalScreen):
     def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
         if not event.tab.id:
             return
-        self.active_tab = event.tab.id
-        self.notify_bindings_change()
-        if event.tab.id == "Info":
+        tab_id = event.tab.id
+        tab_label = getattr(event.tab, "label", None) or getattr(event.tab, "title", None)
+        # Keep track of the active tab id
+        self.active_tab = tab_id
+        log(f"Tab activated: {tab_id}")
+
+        # Determine bindings directly from the TabPane in the event. Using
+        # TabbedContent.active inside notify_bindings_change can be racy when
+        # the TabActivated event fires (it may not have been updated yet), so
+        # set bindings here based on the pane identity from the event.
+        if tab_id in ("info-tab",) or tab_label == "Info":
+            bindings = self.INFO_BINDINGS.copy()
+        elif tab_id in ("terminal-tab",) or tab_label == "Terminal":
+            bindings = self.TERMINAL_BINDINGS.copy()
+        elif tab_id in ("Logs", "logs") or tab_label == "Logs":
+            bindings = self.COMMON_BINDINGS.copy()
+            for b in self.LOGS_BINDINGS:
+                if b not in bindings and b not in self.COMMON_BINDINGS:
+                    bindings.append(b)
+        else:
+            bindings = self.COMMON_BINDINGS.copy()
+
+        # Apply bindings and record activation time to avoid notify races.
+        self._apply_bindings(bindings)
+        self._last_activation = time.time()
+
+        # Now perform tab-specific actions (load info or focus terminal)
+        if tab_id in ("info-tab",) or tab_label == "Info":
             self.call_after_refresh(lambda: asyncio.create_task(self.load_container_info()))
-        elif event.tab.id == "Terminal":
+        elif tab_id in ("terminal-tab",) or tab_label == "Terminal":
             self.call_after_refresh(lambda: self.set_focus(self.query_one("#container-terminal")))
         else:
             self.set_focus(None)
 
     def notify_bindings_change(self) -> None:
-        footer = self.query_one(Footer)
-        active_tab = self.active_tab if hasattr(self, "active_tab") else None
-        bindings = self.COMMON_BINDINGS.copy()
-        if active_tab == "Logs":
+        log("notify_bindings_change called")
+        try:
+            if getattr(self, "_last_activation", 0) and (time.time() - self._last_activation) < 0.05:
+                log("notify_bindings_change: suppressed due to recent explicit activation")
+                return
+        except Exception:
+            pass
+        active_tab = getattr(self, "active_tab", None)
+        if not active_tab:
+            try:
+                tc = self.query_one(TabbedContent)
+                panes = list(tc.query(TabPane))
+                active = tc.active
+                log(f"tc.active: {active}, panes: {[p.id for p in panes]}")
+                for p in panes:
+                    pid = getattr(p, "id", None)
+                    label = getattr(p, "label", None) or getattr(p, "title", None)
+                    if isinstance(active, str):
+                        if pid == active or label == active:
+                            active_tab = label or pid
+                            break
+                    else:
+                        if active is p:
+                            active_tab = label or pid
+                            break
+            except Exception:
+                active_tab = None
+        log(f"computed active_tab: {active_tab}")
+
+        if active_tab in ("Logs", "log", "logs"):
+            bindings = self.COMMON_BINDINGS.copy()
             for b in self.LOGS_BINDINGS:
                 if b not in bindings and b not in self.COMMON_BINDINGS:
                     bindings.append(b)
-        elif active_tab == "Terminal":
-            for b in self.TERMINAL_BINDINGS:
-                if b not in bindings and b not in self.COMMON_BINDINGS:
-                    bindings.append(b)
-        self.__class__.BINDINGS = bindings
-        if footer:
-            footer.refresh(layout=True)
+        elif active_tab in ("Terminal", "terminal", "terminal-tab"):
+            bindings = self.TERMINAL_BINDINGS.copy()
+        elif active_tab in ("Info", "info", "info-tab"):
+            bindings = self.INFO_BINDINGS.copy()
+        else:
+            bindings = self.COMMON_BINDINGS.copy()
+        log(f"Bindings set for active_tab '{active_tab}': {[getattr(b, 'description', str(b)) for b in bindings]}")
+        self._apply_bindings(bindings)
 
     def action_do_action(self, action_name: str):
         if action_name in ("start", "stop"):
@@ -298,6 +402,7 @@ class ContainerActionScreen(ModalScreen):
 
     def _do_container_action(self, action_name: str):
         self.post_message(self.Selected(action_name, self.container_id))
+        self._restore_app_bindings()
         self.app.pop_screen()
 
     # Utility methods for tab switching (unchanged from your source)
@@ -324,6 +429,7 @@ class ContainerActionScreen(ModalScreen):
         return 0
 
     def action_switch_tab_prev(self) -> None:
+        log("Switched tab prev")
         try:
             tc = self.query_one(TabbedContent)
             panes = list(tc.query(TabPane))
@@ -336,14 +442,15 @@ class ContainerActionScreen(ModalScreen):
             pane = panes[prev_idx]
             new_active = getattr(pane, "id", None) or getattr(pane, "label", None) or getattr(pane, "title", None) or str(prev_idx)
             tc.active = str(new_active)
-            if tc.active == "Info":
+            if tc.active in ("info-tab", "Info"):
                 self.call_after_refresh(lambda: asyncio.create_task(self.load_container_info()))
-            elif tc.active == "Terminal":
+            elif tc.active in ("terminal-tab", "Terminal"):
                 self.call_after_refresh(lambda: self.set_focus(self.query_one("#container-terminal")))
         except Exception:
             self.app.bell()
 
     def action_switch_tab_next(self) -> None:
+        log("Switched tab next")
         try:
             tc = self.query_one(TabbedContent)
             panes = list(tc.query(TabPane))
@@ -356,14 +463,15 @@ class ContainerActionScreen(ModalScreen):
             pane = panes[next_idx]
             new_active = getattr(pane, "id", None) or getattr(pane, "label", None) or getattr(pane, "title", None) or str(next_idx)
             tc.active = str(new_active)
-            if tc.active == "Info":
+            if tc.active in ("info-tab", "Info"):
                 self.call_after_refresh(lambda: asyncio.create_task(self.load_container_info()))
-            elif tc.active == "Terminal":
+            elif tc.active in ("terminal-tab", "Terminal"):
                 self.call_after_refresh(lambda: self.set_focus(self.query_one("#container-terminal")))
         except Exception:
             self.app.bell()
 
     def action_switch_tab(self, tab: str) -> None:
+        log(f"Switched to tab: {tab}")
         try:
             tc = self.query_one(TabbedContent)
             panes = list(tc.query(TabPane))
@@ -389,9 +497,9 @@ class ContainerActionScreen(ModalScreen):
                 except Exception:
                     self.app.bell()
                     return
-            if tc.active == "Info":
+            if tc.active in ("info-tab", "Info"):
                 self.call_after_refresh(lambda: asyncio.create_task(self.load_container_info()))
-            elif tc.active == "Terminal":
+            elif tc.active in ("terminal-tab", "Terminal"):
                 self.call_after_refresh(lambda: self.set_focus(self.query_one("#container-terminal")))
         except Exception:
             self.app.bell()
