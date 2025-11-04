@@ -10,6 +10,7 @@ from __future__ import annotations
 # FIXME: when hitting Alt+e, app is waiting for any stdin (output not shown)
 # TODO: do not show cursor when widget is not focused
 
+from typing import Optional
 import os
 import fcntl
 import signal
@@ -37,6 +38,12 @@ from textual import log
 from textual.design import ColorSystem
 
 
+from rich.console import RenderableType
+
+from textual.app import App
+from rich.theme import Theme
+from typing import Dict
+
 class TerminalPyteScreen(pyte.Screen):
     """Overrides the pyte.Screen class to be used with TERM=linux."""
 
@@ -55,6 +62,10 @@ class TerminalDisplay:
         line: Text
         for line in self.lines:
             yield line
+
+    def __rich__(self) -> RenderableType:
+        return self
+
 
 
 _re_ansi_sequence = re.compile(r"(\x1b\[\??[\d;]*[a-zA-Z])")
@@ -90,12 +101,11 @@ class Terminal(Widget, can_focus=True):
         self.ncol = 80
         self.nrow = 24
         self.mouse_tracking = False
-
         # variables used when starting the emulator: self.start()
-        self.emulator: TerminalEmulator = None
-        self.send_queue: asyncio.Queue = None
-        self.recv_queue: asyncio.Queue = None
-        self.recv_task: Task = None
+        self.emulator: Optional[TerminalEmulator] = None
+        self.send_queue: asyncio.Queue = asyncio.Queue()
+        self.recv_queue: asyncio.Queue = asyncio.Queue()
+        self.recv_task: Optional[Task] = None
 
         # OPTIMIZE: check a way to use textual.keys
         self.ctrl_keys = {
@@ -152,12 +162,13 @@ class Terminal(Widget, can_focus=True):
 
         self._display = self.initial_display()
 
-        self.recv_task.cancel()
+        if self.recv_task is not None:
+            self.recv_task.cancel()
 
         self.emulator.stop()
         self.emulator = None
 
-    def render(self):
+    def render(self) -> RenderableType:
         return self._display
 
     async def on_key(self, event: events.Key) -> None:
@@ -287,11 +298,11 @@ class Terminal(Widget, can_focus=True):
 
         foreground = self.detect_color(char.fg)
         background = self.detect_color(char.bg)
-        if self.default_colors == "textual":
+        if self.default_colors == "textual" and self.textual_colors is not None:
             if background == "default":
-                background = self.textual_colors["background"]
+                background = self.textual_colors.get("background", "black")
             if foreground == "default":
-                foreground = self.textual_colors["foreground"]
+                foreground = self.textual_colors.get("foreground", "white")
 
         style: Style
         try:
@@ -302,7 +313,7 @@ class Terminal(Widget, can_focus=True):
             )
         except ColorParseError as error:
             log.warning("color parse error:", error)
-            style = None
+            style = Style()
 
         return style
 
@@ -346,36 +357,40 @@ class Terminal(Widget, can_focus=True):
         return False
 
     def detect_color(self, color: str) -> str:
-        """Tries to detect the correct Rich-Color based on a color name.
-
-        * Returns #<color> if <color> is a hex-definition without "#"
-        * Fixes wrong ANSI color names.
-
-        Examples:
-          * htop is using "brown" => not an ANSI color
-        """
-
         if color == "brown":
             return "yellow"
-
         if color == "brightblack":
-            # fish tabbing through recommendations
             return "#808080"
-
         if re.match("[0-9a-f]{6}", color, re.IGNORECASE):
             return f"#{color}"
-
         return color
 
-    def detect_textual_colors(self) -> dict:
-        """Returns the currently used colors of textual depending on dark-mode."""
 
-        if self.app.dark:
-            color_system: ColorSystem = DEFAULT_COLORS["dark"]
-        else:
-            color_system: ColorSystem = DEFAULT_COLORS["light"]
+    def detect_textual_colors(self) -> Dict[str, str]:
+        """Return the current Textual color theme as a dict."""
+        from textual.color import Color
+        
+        app: App = self.app
+        
+        try:
+            # Get colors from the current screen's computed styles
+            screen_styles = app.screen.styles
+            
+            # Convert Color objects to hex strings
+            bg_color = screen_styles.background
+            fg_color = screen_styles.color
+            
+            return {
+                "background": bg_color.hex if isinstance(bg_color, Color) else "#000000",
+                "foreground": fg_color.hex if isinstance(fg_color, Color) else "#FFFFFF",
+            }
+        except Exception:
+            return {
+                "background": "#000000",
+                "foreground": "#FFFFFF",
+            }
 
-        return color_system.generate()
+
 
     def initial_display(self) -> TerminalDisplay:
         """Returns the display when initially creating the terminal or clearing it."""
@@ -400,8 +415,8 @@ class TerminalEmulator:
         self.ncol = 80
         self.nrow = 24
         self.data_or_disconnect = None
-        self.run_task: asyncio.Task = None
-        self.send_task: asyncio.Task = None
+        self.run_task: Optional[Task] = None
+        self.send_task: Optional[Task] = None
 
         self.fd = self.open_terminal(command=command)
         self.p_out = os.fdopen(self.fd, "w+b", 0)  # 0: buffering off
@@ -414,8 +429,10 @@ class TerminalEmulator:
         self.send_task = asyncio.create_task(self._send_data())
 
     def stop(self):
-        self.run_task.cancel()
-        self.send_task.cancel()
+        if self.run_task is not None:
+            self.run_task.cancel()
+        if self.send_task is not None:
+            self.send_task.cancel()
 
         os.kill(self.pid, signal.SIGTERM)
         os.waitpid(self.pid, 0)

@@ -1,43 +1,62 @@
-2025-10-30 16:05:00.527485 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart, Filter Logs, Next Match, Prev Match
-2025-10-30 16:05:00.527727 notify_bindings_change called
-2025-10-30 16:05:00.527778 computed active_tab: Logs
-2025-10-30 16:05:00.527832 Bindings set for active_tab 'Logs': ['Previous Tab', 'Next Tab', 'Close', 'Start', 'Stop', 'Restart', 'Filter Logs', 'Next Match', 'Prev Match']
-2025-10-30 16:05:00.528620 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart, Filter Logs, Next Match, Prev Match
-2025-10-30 16:05:00.618146 Tab activated: --content-tab-info-tab
-2025-10-30 16:05:00.618209 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart
-2025-10-30 16:05:00.618534 Tab activated: --content-tab-Logs
-2025-10-30 16:05:00.618583 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart, Filter Logs, Next Match, Prev Match
-2025-10-30 16:05:01.841109 Switched tab next
-2025-10-30 16:05:01.862667 Tab activated: --content-tab-terminal-tab
-2025-10-30 16:05:01.862729 Applied bindings: Previous Tab, Next Tab, Close
-2025-10-30 16:05:16.971890 Switched tab prev
-2025-10-30 16:05:16.990349 Tab activated: --content-tab-Logs
-2025-10-30 16:05:16.990427 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart, Filter Logs, Next Match, Prev Match
-2025-10-30 16:05:17.225587 Switched tab prev
-2025-10-30 16:05:17.245199 Tab activated: --content-tab-info-tab
-2025-10-30 16:05:17.245273 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart
-2025-10-30 16:05:17.919469 Switched tab next
-2025-10-30 16:05:17.937992 Tab activated: --content-tab-Logs
-2025-10-30 16:05:17.938064 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart, Filter Logs, Next Match, Prev Match
-2025-10-30 16:05:18.137359 Switched tab next
-2025-10-30 16:05:18.156129 Tab activated: --content-tab-terminal-tab
-2025-10-30 16:05:18.156189 Applied bindings: Previous Tab, Next Tab, Close
-2025-10-30 16:05:20.829266 Switched tab prev
-2025-10-30 16:05:20.850734 Tab activated: --content-tab-Logs
-2025-10-30 16:05:20.850823 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart, Filter Logs, Next Match, Prev Match
-2025-10-30 16:05:21.196130 Switched tab prev
-2025-10-30 16:05:21.215374 Tab activated: --content-tab-info-tab
-2025-10-30 16:05:21.215433 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart
-2025-10-30 16:05:21.872784 Switched tab next
-2025-10-30 16:05:21.893386 Tab activated: --content-tab-Logs
-2025-10-30 16:05:21.893466 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart, Filter Logs, Next Match, Prev Match
-2025-10-30 16:05:22.234767 Switched tab next
-2025-10-30 16:05:22.254999 Tab activated: --content-tab-terminal-tab
-2025-10-30 16:05:22.255066 Applied bindings: Previous Tab, Next Tab, Close
-2025-10-30 16:05:23.787192 Switched tab prev
-2025-10-30 16:05:23.805346 Tab activated: --content-tab-Logs
-2025-10-30 16:05:23.805415 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart, Filter Logs, Next Match, Prev Match
-2025-10-30 16:05:24.698196 Switched tab prev
-2025-10-30 16:05:24.721445 Tab activated: --content-tab-info-tab
-2025-10-30 16:05:24.721506 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart
-2025-10-30 16:05:27.956986 Restored app bindings
+2025-11-04 13:48:57.968867 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart, Filter Logs, Next Match, Prev Match
+2025-11-04 13:48:57.969465 notify_bindings_change called
+2025-11-04 13:48:57.969514 computed active_tab: Logs
+2025-11-04 13:48:57.969611 Bindings set for active_tab 'Logs': ['Previous Tab', 'Next Tab', 'Close', 'Start', 'Stop', 'Restart', 'Filter Logs', 'Next Match', 'Prev Match']
+2025-11-04 13:48:57.969637 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart, Filter Logs, Next Match, Prev Match
+2025-11-04 13:48:58.026109 Tab activated: --content-tab-info-tab
+2025-11-04 13:48:58.026175 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart
+2025-11-04 13:48:58.026575 Tab activated: --content-tab-Logs
+2025-11-04 13:48:58.026630 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart, Filter Logs, Next Match, Prev Match
+2025-11-04 13:48:59.031578 Switched tab next
+2025-11-04 13:48:59.050189 Tab activated: --content-tab-terminal-tab
+2025-11-04 13:48:59.050255 Applied bindings: Previous Tab, Next Tab, Close
+2025-11-04 13:49:29.750716 Switched tab prev
+2025-11-04 13:49:29.771445 Tab activated: --content-tab-Logs
+2025-11-04 13:49:29.771534 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart, Filter Logs, Next Match, Prev Match
+2025-11-04 13:49:30.363293 Switched tab next
+2025-11-04 13:49:30.382581 Tab activated: --content-tab-terminal-tab
+2025-11-04 13:49:30.382639 Applied bindings: Previous Tab, Next Tab, Close
+2025-11-04 13:49:31.525524 Switched tab next
+2025-11-04 13:49:31.543998 Tab activated: --content-tab-info-tab
+2025-11-04 13:49:31.544064 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart
+2025-11-04 13:49:31.765918 Switched tab prev
+2025-11-04 13:49:31.806331 Tab activated: --content-tab-terminal-tab
+2025-11-04 13:49:31.806525 Applied bindings: Previous Tab, Next Tab, Close
+2025-11-04 13:49:31.845384 Switched tab prev
+2025-11-04 13:49:31.863967 Tab activated: --content-tab-Logs
+2025-11-04 13:49:31.864049 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart, Filter Logs, Next Match, Prev Match
+2025-11-04 13:49:32.442723 Switched tab next
+2025-11-04 13:49:32.461643 Tab activated: --content-tab-terminal-tab
+2025-11-04 13:49:32.461697 Applied bindings: Previous Tab, Next Tab, Close
+2025-11-04 13:49:32.684456 Switched tab next
+2025-11-04 13:49:32.703672 Tab activated: --content-tab-info-tab
+2025-11-04 13:49:32.703746 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart
+2025-11-04 13:49:33.401684 Switched tab next
+2025-11-04 13:49:33.420954 Tab activated: --content-tab-Logs
+2025-11-04 13:49:33.421038 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart, Filter Logs, Next Match, Prev Match
+2025-11-04 13:49:33.858060 Switched tab next
+2025-11-04 13:49:33.879824 Tab activated: --content-tab-terminal-tab
+2025-11-04 13:49:33.879899 Applied bindings: Previous Tab, Next Tab, Close
+2025-11-04 13:49:34.456277 Restored app bindings
+2025-11-04 13:49:35.619099 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart, Filter Logs, Next Match, Prev Match
+2025-11-04 13:49:35.619872 notify_bindings_change called
+2025-11-04 13:49:35.619900 computed active_tab: Logs
+2025-11-04 13:49:35.619951 Bindings set for active_tab 'Logs': ['Previous Tab', 'Next Tab', 'Close', 'Start', 'Stop', 'Restart', 'Filter Logs', 'Next Match', 'Prev Match']
+2025-11-04 13:49:35.620415 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart, Filter Logs, Next Match, Prev Match
+2025-11-04 13:49:35.675479 Tab activated: --content-tab-info-tab
+2025-11-04 13:49:35.675649 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart
+2025-11-04 13:49:35.676029 Tab activated: --content-tab-Logs
+2025-11-04 13:49:35.676125 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart, Filter Logs, Next Match, Prev Match
+2025-11-04 13:49:36.348065 Switched tab next
+2025-11-04 13:49:36.366655 Tab activated: --content-tab-terminal-tab
+2025-11-04 13:49:36.366711 Applied bindings: Previous Tab, Next Tab, Close
+2025-11-04 13:49:44.852666 Switched tab prev
+2025-11-04 13:49:44.873020 Tab activated: --content-tab-Logs
+2025-11-04 13:49:44.873109 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart, Filter Logs, Next Match, Prev Match
+2025-11-04 13:49:45.431267 Switched tab next
+2025-11-04 13:49:45.457669 Tab activated: --content-tab-terminal-tab
+2025-11-04 13:49:45.457733 Applied bindings: Previous Tab, Next Tab, Close
+2025-11-04 13:49:45.790590 Switched tab prev
+2025-11-04 13:49:45.809519 Tab activated: --content-tab-Logs
+2025-11-04 13:49:45.809611 Applied bindings: Previous Tab, Next Tab, Close, Start, Stop, Restart, Filter Logs, Next Match, Prev Match
+2025-11-04 13:49:45.994207 Restored app bindings
