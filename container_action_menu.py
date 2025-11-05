@@ -13,7 +13,7 @@ import re
 from container_logs import stream_logs
 from tabs.container_info import InfoTab
 from container_exec import ContainerShell
-from logger import log
+
 
 class ContainerActionScreen(ModalScreen):
     CSS_PATH = "tcss/shell.tcss"
@@ -163,7 +163,6 @@ class ContainerActionScreen(ModalScreen):
                     else:
                         self._saved_app_bindings = []
                 setattr(self.app, "BINDINGS", binding_list)  # type: ignore[attr-defined]
-            log("Applied bindings: " + ", ".join(getattr(b, "description", str(b)) for b in binding_list))
         except Exception:
             pass
         self._refresh_footer()
@@ -174,7 +173,7 @@ class ContainerActionScreen(ModalScreen):
         try:
             if hasattr(self.app, "BINDINGS"):
                 setattr(self.app, "BINDINGS", list(self._saved_app_bindings))  # type: ignore[attr-defined]
-            log("Restored app bindings")
+            
         except Exception:
             pass
         self._saved_app_bindings = None
@@ -314,7 +313,6 @@ class ContainerActionScreen(ModalScreen):
         tab_label = getattr(event.tab, "label", None) or getattr(event.tab, "title", None)
         # Keep track of the active tab id
         self.active_tab = tab_id
-        log(f"Tab activated: {tab_id}")
 
         # Determine bindings directly from the TabPane in the event. Using
         # TabbedContent.active inside notify_bindings_change can be racy when
@@ -345,10 +343,8 @@ class ContainerActionScreen(ModalScreen):
             self.set_focus(None)
 
     def notify_bindings_change(self) -> None:
-        log("notify_bindings_change called")
         try:
             if getattr(self, "_last_activation", 0) and (time.time() - self._last_activation) < 0.05:
-                log("notify_bindings_change: suppressed due to recent explicit activation")
                 return
         except Exception:
             pass
@@ -358,7 +354,6 @@ class ContainerActionScreen(ModalScreen):
                 tc = self.query_one(TabbedContent)
                 panes = list(tc.query(TabPane))
                 active = tc.active
-                log(f"tc.active: {active}, panes: {[p.id for p in panes]}")
                 for p in panes:
                     pid = getattr(p, "id", None)
                     label = getattr(p, "label", None) or getattr(p, "title", None)
@@ -372,7 +367,6 @@ class ContainerActionScreen(ModalScreen):
                             break
             except Exception:
                 active_tab = None
-        log(f"computed active_tab: {active_tab}")
 
         if active_tab in ("Logs", "log", "logs"):
             bindings = self.COMMON_BINDINGS.copy()
@@ -385,7 +379,6 @@ class ContainerActionScreen(ModalScreen):
             bindings = self.INFO_BINDINGS.copy()
         else:
             bindings = self.COMMON_BINDINGS.copy()
-        log(f"Bindings set for active_tab '{active_tab}': {[getattr(b, 'description', str(b)) for b in bindings]}")
         self._apply_bindings(bindings)
 
     def action_do_action(self, action_name: str):
@@ -429,7 +422,6 @@ class ContainerActionScreen(ModalScreen):
         return 0
 
     def action_switch_tab_prev(self) -> None:
-        log("Switched tab prev")
         try:
             tc = self.query_one(TabbedContent)
             panes = list(tc.query(TabPane))
@@ -450,7 +442,6 @@ class ContainerActionScreen(ModalScreen):
             self.app.bell()
 
     def action_switch_tab_next(self) -> None:
-        log("Switched tab next")
         try:
             tc = self.query_one(TabbedContent)
             panes = list(tc.query(TabPane))
@@ -471,7 +462,6 @@ class ContainerActionScreen(ModalScreen):
             self.app.bell()
 
     def action_switch_tab(self, tab: str) -> None:
-        log(f"Switched to tab: {tab}")
         try:
             tc = self.query_one(TabbedContent)
             panes = list(tc.query(TabPane))
