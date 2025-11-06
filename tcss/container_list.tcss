@@ -36,17 +36,6 @@
   margin-top:0;
 }
 
-/* 🟡 Focused Container */
-.container-card:focus {
-  background: #2f3038;
-}
-
-
-/* 🟣 Hovered Container */
-.container-card:hover {
-  padding: 0;
-  background: #45475a;
-}
 
 /* 🔤 Column Styling */
 .col {
@@ -100,3 +89,22 @@
     text-style: italic;
 }
 
+
+/* Alternating row background colors */
+.container-card:odd {
+    background: #313244; /* Bright */
+}
+
+.container-card:even {
+    background: #1e1e2e; /* Normal */
+}
+
+/* Keep hover and focus states overriding base colors */
+.container-card:hover {
+    background: #45475a;
+}
+
+.container-card:focus {
+    background: #537fc5cc;  /* Light yellow focus */
+    text-style: bold;  /* Make it pop */
+}
