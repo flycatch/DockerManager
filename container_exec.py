@@ -12,13 +12,26 @@ async def patched_on_key(self, event: events.Key) -> None:
         return
 
     if event.key == "shift+escape":
-        # Release focus
         self.app.set_focus(None)
         return
 
     event.stop()
-    # Handle Enter and Backspace properly
-    if event.key == "enter":
+
+    control_key_map = {
+        "ctrl+c": "\x03",
+        "ctrl+d": "\x04",
+        "ctrl+z": "\x1A",
+        "ctrl+r": "\x12",
+        "ctrl+a": "\x01",
+        "ctrl+e": "\x05",
+        "ctrl+k": "\x0B",
+        "ctrl+u": "\x15",
+        "ctrl+l": "\x0C",
+    }
+
+    if event.key in control_key_map:
+        await self.send_queue.put(["stdin", control_key_map[event.key]])
+    elif event.key == "enter":
         await self.send_queue.put(["stdin", "\n"])
     elif event.key == "backspace":
         await self.send_queue.put(["stdin", "\x7f"])
@@ -28,6 +41,7 @@ async def patched_on_key(self, event: events.Key) -> None:
             await self.send_queue.put(["stdin", char])
 
 Terminal.on_key = patched_on_key
+
 
 # --- Container shell widget using textual-terminal ---
 
