@@ -1,0 +1,18 @@
+/*
+ * screen.tcss
+ * Base screen layout styles for Docker Manager TUI.
+ * 
+ * This stylesheet defines:
+ * - Root screen alignment and padding
+ * - Background color and opacity
+ * - Content positioning
+ * - Base layout properties
+ */
+
+/* 🌌 Screen Layout */
+Screen {
+  align: center middle;
+  content-align: center middle;
+  background: #1e1e2e 95%;
+  padding: 0;
+}

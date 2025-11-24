@@ -1,0 +1,38 @@
+/*
+ * standalone_search.tcss
+ * Styles for the standalone container search functionality.
+ * 
+ * This stylesheet defines:
+ * - Search input positioning and visibility
+ * - Active search state styling
+ * - Focus and hover effects
+ * - Search overlay behavior
+ * - Color scheme consistency
+ */
+
+#uncategorized-search {
+    dock: bottom;
+    border: round #585b70;
+    background: #1e1e2e;
+    color: #cdd6f4;
+    width: 20%;
+    # width: 40;
+    margin: 0 0;
+    padding: 0 0;
+    display: none; /* Hidden by default */
+    layer: overlay;
+}
+
+#uncategorized-search.search-active {
+    border: round #89b4fa;
+    background: #1e1e2e;
+    width: 20%;
+    padding: 0 0;
+}
+
+#uncategorized-search:focus {
+    border: round #89b4fa;
+    background: #1e1e2e;
+    padding: 0 0;
+
+}

@@ -1,0 +1,90 @@
+
+/*
+ * project_tab.tcss
+ * Styles for the Docker Compose projects view in Docker Manager TUI.
+ * 
+ * This stylesheet defines:
+ * - Project list layout and tree structure
+ * - Focus states and opacity transitions
+ * - Project node styling and indentation
+ * - Selection highlighting
+ * - Container section layout within projects
+ */
+
+/* 🧩 Compose Projects Layout */
+#projects-layout {
+  layout: horizontal;
+  border: round #585b70;
+  background: #1e1e2e;
+  height: 1fr;
+  opacity: 0.6;
+  margin: 0 0; 
+}
+
+
+#projects-layout:focus-within {
+    opacity: 1;    
+}
+/* 🌳 Compose Project Tree */
+#project-tree {
+  border: round #79879eff;
+  padding: 1 2;
+  margin: 0 0;
+  background: #1e1e2e;
+  height: 1fr;
+  overflow: auto;
+  width: 20%;
+  color: #cdd6f4;
+  scrollbar-gutter: stable;
+  border-title-color: #89b4fa;
+  border-title-align: left;
+  border-title-background: #313244;
+  border-subtitle-color: #7f849c;
+}
+
+/* Highlight when focused */
+#project-tree:focus-within {
+    border: round #89b4fa;    /* active blue */
+    background: #181825;
+}
+
+.tree--label {
+  padding: 0 1;
+  color: #cdd6f4;
+  text-style: bold;
+  height: 3;
+  content-align: left middle;
+  background: #1e1e2e;
+  border: none;
+}
+
+.tree--label:hover {
+  background: #313244;
+}
+
+.tree--cursor {
+  background: #89b4fa;
+  color: #313244;
+  text-style: bold reverse;
+}
+
+.tree--guides {
+  color: #6c7086;
+}
+
+.tree--guides.tree--guide-line {
+  color: #45475a;
+}
+
+.tree-node {
+  padding: 0;
+  margin: 0 1;
+}
+/* Add this to your CSS */
+ProjectsTab:focus {
+    border: dashed  #89b4fa;
+}
+
+#projects-layout:focus-within {
+    border: round #89b4fa;
+}

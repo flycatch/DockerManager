@@ -1,0 +1,24 @@
+Screen {
+background: #1e1e2e 95%;
+color: #94a3b8; 
+
+}
+.TabPane,
+.VerticalScroll,
+.Static,
+.Input,
+.Footer {
+background: #1e1e2e 95%;
+border: round #89b4fa;
+color: #e6eef8; 
+
+}
+
+#container-terminal {
+background: #1e1e2e 95%; 
+color: #d6e6ff; 
+border: round #89b4fa; 
+width: 1fr;
+height: 1fr;
+
+}

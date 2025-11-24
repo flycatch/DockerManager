@@ -1,0 +1,510 @@
+from textual.binding import Binding
+import asyncio
+from typing import Dict, Any, Optional
+from textual.app import ComposeResult, App
+from textual.widgets import TabbedContent, TabPane, Tree, Footer, Input
+from textual.containers import Vertical
+from textual.widgets import TabbedContent
+from rich.text import Text
+from cards.container_card import ContainerCard
+from container_action_menu import ContainerActionScreen
+from service import (
+    get_projects_with_containers,
+    start_container,
+    stop_container,
+    restart_container
+)
+from tabs.container_tab import ContainersTab
+from tabs.project_tab import ProjectsTab
+from cards.container_header import ContainerHeader
+from widgets.loading_screen import LoadingOverlay
+
+class DockerManager(App):
+    """Main application class for the Docker Manager TUI.
+    
+    This class provides a terminal user interface for managing Docker containers and services.
+    It includes features for:
+    - Viewing and managing standalone containers
+    - Managing Docker Compose services
+    - Container operations (start, stop, delete)
+    - Container logs and shell access
+    - Real-time status updates
+    
+    The UI is divided into two main tabs:
+    1. Standalone (🟡): For managing individual containers
+    2. Services (🟢): For managing Docker Compose services and their containers
+    """
+    
+    CSS_PATH = [
+        "../tcss/container_list.tcss", "../tcss/header.tcss", "../tcss/project_search.tcss",
+        "../tcss/filter.tcss", "../tcss/standalone_search.tcss",
+        "../tcss/project_tab.tcss", "../tcss/shell.tcss", "../tcss/logs.tcss",
+        "../tcss/screen.tcss", "../tcss/standalone_tab.tcss", "../tcss/container_info.tcss",
+        "../tcss/loading_screen.tcss", "../tcss/confirm_overlay.tcss"
+    ]
+    
+    ENABLE_COMMAND_PALETTE = False
+    BINDINGS = [
+        Binding("left", "prev_tab", "Previous Tab", show=True),
+        Binding("right", "next_tab", "Next Tab", show=True),
+        Binding("tab", "toggle_focus", "Toggle Focus", show=True, key_display="Tab"),
+        Binding("ctrl+q", "quit", "Quit", show=True)
+    ]
+
+    def __init__(self):
+        """Initialize the DockerManager application.
+        
+        Sets up the initial state including:
+        - Container card mappings for both services and standalone containers
+        - Project data structures for Docker Compose services
+        - State tracking for UI focus and refresh operations
+        
+        The manager maintains separate dictionaries for:
+        - Service containers (self.cards)
+        - Standalone containers (self.uncategorized_cards)
+        - Project metadata (self.projects)
+        """
+        super().__init__()
+        self.cards: Dict[str, ContainerCard] = {}
+        self.uncategorized_cards: Dict[str, ContainerCard] = {}
+        self.projects: dict[str, list[tuple[int, str, str, str, str, str, str]]] = {}
+        self._refreshing = False
+        self.current_project: str | None = None
+        self._last_focused_id: str | None = None
+        self._last_containers: dict[str, tuple[str, str, str, str]] = {}
+
+    def compose(self) -> ComposeResult:
+        """Compose the application's user interface layout.
+        
+        Creates a tabbed interface with two main sections:
+        1. Standalone Containers (🟡):
+           - List of individual containers
+           - Search and filter capabilities
+           
+        2. Services (🟢):
+           - Tree view of Docker Compose projects
+           - Container list for the selected project
+           - Project and container headers
+        
+        Returns:
+            ComposeResult: The composed widget hierarchy for the application
+        """
+        tabbed_content = TabbedContent()
+        self.tabbed_content = tabbed_content
+        with tabbed_content:
+            # --- All Containers tab ---
+            with TabPane("🟡 Standalone", id="tab-uncategorized"):
+                self.uncategorized_list = ContainersTab(id="uncategorized-list")
+                yield self.uncategorized_list
+
+            # --- Projects tab ---
+            with TabPane("🟢 Services", id="tab-projects"):
+                with ProjectsTab(id="projects-layout"):
+                    self.project_tree = Tree("🔹Compose Projects", id="project-tree")
+                    self.project_tree.can_focus = True
+                    self.project_tree.show_guides = True
+                    yield self.project_tree
+                    with Vertical(id="container-section"):
+                        yield ContainerHeader()
+                        self.container_list = Vertical(id="container-list")
+                        yield self.container_list
+
+        yield Footer()
+
+    async def on_mount(self) -> None:
+        self.set_interval(2.0, self.trigger_background_refresh)
+        await self.refresh_projects()
+        # Start with uncategorized tab
+        self.action_goto_uncategorized()
+
+    def _get_tabbed(self) -> TabbedContent:
+        return self.query_one(TabbedContent)
+    
+    def key_escape(self) -> None:
+        """Handle Escape key globally - but let focused widgets handle it first."""
+        # Check if we're in the uncategorized tab and search is active
+        if (not self.is_projects_tab_active() and 
+            hasattr(self, 'uncategorized_list') and 
+            self.uncategorized_list and 
+            self.uncategorized_list.search_active):
+            # Let the ContainersTab handle the escape key
+            return
+        
+        # Handle escape in projects tab
+        if self.is_projects_tab_active():
+            # If focus is in the container list, return it to the project tree
+            focused = self.screen.focused
+            container_list = self.query_one("#container-list")
+            if focused and container_list and focused in container_list.ancestors_with_self:
+                if self.project_tree and self.project_tree.root.children:
+                    # Select the first project
+                    first_node = self.project_tree.root.children[0]
+                    self.project_tree.select_node(first_node)
+                self.set_focus(self.project_tree)
+
+    def action_goto_uncategorized(self) -> None:
+        self.tabbed_content.active = "tab-uncategorized"
+        if self.uncategorized_list:
+            # Focus the first container card, not the search input
+            cards = self.uncategorized_list.query(ContainerCard)
+            if cards:
+                self.set_focus(cards.first())
+                self.uncategorized_list.selected_index = 0
+
+    def action_goto_projects(self) -> None:
+        self.tabbed_content.active = "tab-projects"
+        if self.project_tree and self.project_tree.root.children:
+            first_node = self.project_tree.root.children[0]
+            # Move cursor to first project without selecting it
+            self.project_tree.move_cursor(first_node)
+            # Show its containers
+            if first_node.data:
+                self.run_worker(self.refresh_container_list(first_node.data), group="refresh")
+            self.set_focus(self.project_tree)
+            
+    def action_toggle_focus(self) -> None:
+        """Toggle focus between project tree and container list in Services tab."""
+        if not self.is_projects_tab_active():
+            return
+            
+        focused = self.screen.focused
+        container_list = self.query_one("#container-list")
+        
+        # If focus is in project tree, move to first container if available
+        if focused == self.project_tree and container_list and container_list.children:
+            for child in container_list.children:
+                if isinstance(child, ContainerCard):
+                    self.set_focus(child)
+                    break
+        # If focus is in container list, move back to project tree
+        elif container_list and focused in container_list.ancestors_with_self:
+            self.set_focus(self.project_tree)
+
+    def action_next_tab(self) -> None:
+        """Switch to the next tab and properly focus content."""
+        tabbed = self._get_tabbed()
+        panes = [p for p in tabbed.query(TabPane)]
+        ids = [p.id for p in panes if p.id]
+        if not ids:
+            return
+        try:
+            idx = ids.index(tabbed.active)
+        except ValueError:
+            idx = 0
+        next_id = ids[(idx + 1) % len(ids)]
+        
+        if next_id == "tab-uncategorized":
+            self.action_goto_uncategorized()
+        elif next_id == "tab-projects":
+            self.action_goto_projects()
+
+
+    def action_prev_tab(self) -> None:
+        """Switch to the previous tab and properly focus content."""
+        tabbed = self._get_tabbed()
+        panes = [p for p in tabbed.query(TabPane)]
+        ids = [p.id for p in panes if p.id]
+        if not ids:
+            return
+        try:
+            idx = ids.index(tabbed.active)
+        except ValueError:
+            idx = 0
+        prev_id = ids[(idx - 1) % len(ids)]
+        
+        if prev_id == "tab-uncategorized":
+            self.action_goto_uncategorized()
+        elif prev_id == "tab-projects":
+            self.action_goto_projects()
+
+
+
+    def _get_search_input(self) -> Optional[Input]:
+        """Return the search Input widget from the uncategorized list."""
+        uncat = getattr(self, "uncategorized_list", None)
+        if uncat is None:
+            return None
+        try:
+            widget = uncat.query_one("#uncategorized-search")
+        except Exception:
+            return None
+        return widget if isinstance(widget, Input) else None
+    
+    async def on_tabbed_content_tab_activated(self, event: TabbedContent.TabActivated) -> None:
+        if event.pane.id == "tab-uncategorized":
+            # Ensure search is hidden when switching to this tab
+            if self.uncategorized_list:
+                self.uncategorized_list.search_active = False
+                # Focus first container card
+                first_card = None
+                for child in self.uncategorized_list.children:
+                    if isinstance(child, ContainerCard):
+                        first_card = child
+                        break
+                if first_card:
+                    self.set_focus(first_card)
+                    self.uncategorized_list.selected_index = 0
+
+    def is_projects_tab_active(self) -> bool:
+        """Check if the Projects tab is currently active"""
+        tabbed_content = self.query_one(TabbedContent)
+        return tabbed_content.active == "tab-projects"
+
+    def trigger_background_refresh(self) -> None:
+        self.run_worker(self.refresh_projects, exclusive=True, group="refresh")
+
+    async def refresh_projects(self):
+        """Refresh the projects and containers view asynchronously.
+        
+        This method performs a full refresh of both standalone containers and Docker Compose projects:
+        1. Retrieves latest container and project data
+        2. Optimizes updates by comparing with previous state
+        3. Updates container statuses if only status changes are detected
+        4. Performs full UI rebuild if container membership or projects changed
+        5. Maintains selection and focus state during refresh
+        
+        The method uses a two-stage refresh strategy:
+        - Fast path: Only update statuses if container set is unchanged
+        - Full sync: Rebuild UI components if container set or projects changed
+        
+        Thread-safe with built-in reentrance protection.
+        """
+        if self._refreshing:
+            return
+        self._refreshing = True
+
+        try:
+            all_projects = get_projects_with_containers()
+
+            # Flatten into a {cid: (name, image, status)} dict for comparison
+            new_snapshot = {}
+            for project, containers in all_projects.items():
+                for item in containers:
+                    # be flexible about tuple length (works if containers are 5-tuple or 7-tuple)
+                    try:
+                        _, cid, name, image, status, *rest = item
+                    except ValueError:
+                        # something unexpected; skip this container safely
+                        continue
+                    new_snapshot[cid] = (name, image, status)
+            # --- CASE 1: Only statuses changed ---
+            if (
+                set(new_snapshot.keys()) == set(self._last_containers.keys())
+                and all(new_snapshot[cid][0:2] == self._last_containers[cid][0:2] 
+                        for cid in new_snapshot)
+            ):
+                # Just update statuses (faster, no UI rebuild)
+                for cid, (name, image, status) in new_snapshot.items():
+                    card = self.get_container_card_by_id(cid)
+                    if card:
+                        card.update_status(status)
+                self._last_containers = new_snapshot
+                return
+
+            # --- CASE 2: Projects/membership changed → full sync ---
+            self._last_containers = new_snapshot
+
+            # Update Uncategorized View
+            if "Uncategorized" in all_projects:
+                await self.sync_card_list(
+                    all_projects["Uncategorized"],
+                    self.uncategorized_cards,
+                    self.uncategorized_list
+                )
+
+            # Rebuild Compose Project Tree
+            self.project_tree.root.remove_children()
+            self.project_tree.root.allow_expand = False
+            for project, containers in all_projects.items():
+                if project != "Uncategorized":
+                    node = self.project_tree.root.add(f"🔹 {project}", data=containers)
+                    node.allow_expand = False
+            self.project_tree.root.expand()
+            self.project_tree.show_root = False
+
+            # Only restore previous project selection if it exists, without auto-focusing
+            if self.current_project and self.is_projects_tab_active():
+                for node in self.project_tree.root.children:
+                    label = node.label.plain if isinstance(node.label, Text) else str(node.label)
+                    if label[1:].strip() == self.current_project:
+                        # Update container list without changing focus
+                        await self.refresh_container_list(node.data or [])
+                        break
+
+        finally:
+            self._refreshing = False
+
+    async def refresh_container_list(self, containers: list[tuple[int, str, str, str, str, str, str]]):
+        await self.sync_card_list(containers, self.cards, self.container_list)
+
+    
+
+    # In the sync_card_list method, update the parameter type and unpacking
+    async def sync_card_list(
+        self,
+        container_data: list[tuple[int, str, str, str, str, str, str]],
+        container_map: dict[str, ContainerCard],
+        mount_target: Vertical
+    ):
+        """Synchronize the container cards UI with the current container state.
+        
+        Args:
+            container_data: List of container information tuples containing:
+                          (index, container_id, name, image, status, ports, created)
+            container_map: Dictionary mapping container IDs to their ContainerCard widgets
+            mount_target: The Vertical layout widget to mount new cards into
+            
+        This method efficiently updates the UI by:
+        1. Removing cards for containers that no longer exist
+        2. Updating status for existing containers
+        3. Creating new cards for new containers
+        4. Maintaining focus and selection state
+        
+        The method uses diff-based updates to minimize UI rebuilds and 
+        preserve application responsiveness.
+        """
+        current_focused = self.screen.focused
+        focused_id = getattr(current_focused, 'container_id', None) if (current_focused and isinstance(current_focused, ContainerCard)) else None
+        
+        new_ids = {cid for _, cid, *_ in container_data}
+        old_ids = set(container_map.keys())
+
+        # Remove cards that no longer exist
+        for cid in old_ids - new_ids:
+            card = container_map.pop(cid)
+            await card.remove()
+
+        # Create a mapping of container ID to status for quick lookup
+        status_map = {cid: status for _, cid, _, _, status, _, _ in container_data}  # Added unpacking for ports and created
+
+        for cid in old_ids & new_ids:
+            if cid in container_map and cid in status_map:
+                container_map[cid].update_status(status_map[cid])
+        
+        # Add new cards - note the additional parameters
+        for idx, cid, name, image, status, ports, created in container_data:  # Now unpacking all 7 values
+            if cid not in container_map:
+                card = ContainerCard(idx, cid, name, image, status, ports, created)
+                container_map[cid] = card
+                await mount_target.mount(card)
+
+        # Only restore focus if we had a previously focused container and we're in the active tab
+        if focused_id and self.screen.focused in mount_target.ancestors_with_self:
+            focused_card = self.get_container_card_by_id(focused_id)
+            if focused_card:
+                self.set_focus(focused_card)
+
+    def get_container_card_by_id(self, container_id: str) -> ContainerCard | None:
+        """Find a container card by ID in either cards dictionary"""
+        if container_id in self.cards:
+            return self.cards[container_id]
+        if container_id in self.uncategorized_cards:
+            return self.uncategorized_cards[container_id]
+        return None
+
+    async def on_tree_node_highlighted(self, event: Tree.NodeHighlighted) -> None:
+        """Handle project tree node hover/focus events."""
+        containers: Any = event.node.data
+        if containers:
+            # Just preview the containers without changing focus
+            await self.refresh_container_list(containers)
+            self.current_project = self.get_selected_project()
+        else:
+            # Clear container list if no containers in the highlighted project
+            await self.sync_card_list([], self.cards, self.container_list)
+
+    async def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
+        """Handle project tree node selection (Enter key)."""
+        containers: Any = event.node.data
+        if containers:
+            await self.refresh_container_list(containers)
+            self.current_project = self.get_selected_project()
+            
+            # Move focus to the first container in the list
+            container_list = self.query_one("#container-list")
+            if container_list and container_list.children:
+                for child in container_list.children:
+                    if isinstance(child, ContainerCard):
+                        self.set_focus(child)
+                        break
+
+    async def on_container_action_screen_selected(self, message: ContainerActionScreen.Selected):
+        cid = message.container_id
+        action = message.action
+        self.disabled = False
+        container_name = "Unknown"
+        for card in list(self.cards.values()) + list(self.uncategorized_cards.values()):
+            if card.container_id == cid:
+                container_name = card.container_name
+                break
+        # Only perform the action, confirmation is handled in the action menu
+        self._do_container_action(action, cid, container_name)
+
+    def _do_container_action(self, action: str, cid: str, container_name: str):
+        overlay = None
+        success = False
+        notification_message = ""
+        async def do_action():
+            nonlocal success, notification_message
+            if action == "start":
+                overlay = LoadingOverlay(f"Starting container '{container_name}'...")
+                self.screen.mount(overlay)
+                self.refresh()
+                try:
+                    success = await asyncio.to_thread(start_container, cid)
+                    notification_message = f"Started container: {container_name}" if success else f"Failed to start container: {container_name}"
+                finally:
+                    await overlay.remove_self()
+            elif action == "stop":
+                overlay = LoadingOverlay(f"Stopping container '{container_name}'...")
+                self.screen.mount(overlay)
+                self.refresh()
+                try:
+                    success = await asyncio.to_thread(stop_container, cid)
+                    notification_message = f"Stopped container: {container_name}" if success else f"Failed to stop container: {container_name}"
+                finally:
+                    await overlay.remove_self()
+            elif action == "restart":
+                overlay = LoadingOverlay(f"Restarting container '{container_name}'...")
+                self.screen.mount(overlay)
+                self.refresh()
+                try:
+                    success = await asyncio.to_thread(restart_container, cid)
+                    notification_message = f"Restarted container: {container_name}" if success else f"Failed to restart container: {container_name}"
+                finally:
+                    await overlay.remove_self()
+            if notification_message:
+                if success:
+                    self.notify_success(notification_message)
+                else:
+                    self.notify_error(notification_message)
+            self.run_worker(self.refresh_projects, exclusive=True, group="refresh")
+            self.set_timer(0.05, lambda: self.run_worker(self.refresh_projects, exclusive=True, group="refresh"))
+        self.run_worker(do_action())
+    
+    def get_selected_project(self) -> str | None:
+        """Return the currently selected project name from the tree."""
+        if self.project_tree and self.project_tree.cursor_node:
+            label = self.project_tree.cursor_node.label
+            
+            if isinstance(label, Text):
+                raw_label = label.plain.strip()
+            else:
+                raw_label = str(label).strip()
+            
+            if raw_label and len(raw_label) > 1:
+                return raw_label[1:].strip()
+            return raw_label
+        return None
+
+    def notify_success(self, message: str) -> None:
+        """Show a success notification."""
+        self.notify(message, severity="information", timeout=3)
+
+    def notify_error(self, message: str) -> None:
+        """Show an error notification."""
+        self.notify(message, severity="error", timeout=5)
+
+    def notify_warning(self, message: str) -> None:
+        """Show a warning notification."""
+        self.notify(message, severity="warning", timeout=4)
