@@ -16,7 +16,7 @@
   dock: bottom;
   margin: 0 0;
   color: #cdd6f4;
-  width: 40;
+  width: 20%;
   padding: 0 0;
   border: round #89b4fa;
   display: none; /* hidden by default */
@@ -34,7 +34,7 @@
   background: #1e1e2e;         /* background of list */
   padding: 0 1;                /* inner spacing for options */
   layer: overlay;              /* ensure it floats above content */
-  width: 40;                 /* can match parent width */
+  width: 20%;                 /* can match parent width */
 }
 
 /* Individual options */

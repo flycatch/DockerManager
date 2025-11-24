@@ -32,7 +32,9 @@ class ContainersTab(Vertical, can_focus=True):
         Binding("down", "focus_next", "Next", show=True),
         Binding("up", "focus_previous", "Previous", show=True),
         Binding("enter", "open_menu", "Actions", show=True),
-        Binding("/", "focus_search", "Search", show=True),
+    # Binding("/", "focus_search", "Search", show=True),  # removed in favor of /c and /i
+        Binding("c", "focus_search_container", "Search Container", show=True),
+        Binding("i", "focus_image_search", "Search Image", show=True),
         Binding("f", "toggle_filter", "Filter", show=True),   # NEW
         Binding("escape", "clear_search_or_filter", "Clear", show=False),  # UPDATED
     ]
@@ -55,6 +57,8 @@ class ContainersTab(Vertical, can_focus=True):
         super().__init__(id=id)
         self.selected_index: int = 0
         self.search_active = reactive(False)
+        # search_mode can be 'container' or 'image' (or None when inactive)
+        self.search_mode: str | None = None
         self.filter_active = reactive(False)
         self.search_input: Optional[Input] = None
         self.filter_dropdown: Optional[Select] = None
@@ -185,30 +189,13 @@ class ContainersTab(Vertical, can_focus=True):
         """Find the search Input safely and ensure its type for the type-checker."""
         return self.search_input
 
-    def _matches(self, card: ContainerCard, query: str) -> bool:
-        """Return True if query matches name, image, or status."""
-        name = getattr(card, "container_name", "") or ""
-        image = getattr(card, "image", "") or getattr(card, "container_image", "") or ""
-        status = getattr(card, "status", "") or ""
-        hay = f"{name} {image} {status}".lower()
-        return query in hay
-
-    def action_focus_search(self) -> None:
-        """Show search input and focus it."""
-        inp = self._get_search_input()
-        if inp:
-            self.search_active = True
-            inp.value = ""
-            # Force the display immediately
-            inp.styles.display = "block"
-            self.app.set_focus(inp)
-
     def action_clear_search(self) -> None:
         """Clear search and hide the search input."""
         inp = self._get_search_input()
         if inp:
             inp.value = ""
             self.search_active = False
+            self.search_mode = None
             # Hide the search input immediately
             inp.styles.display = "none"
             # Show all cards
@@ -227,6 +214,11 @@ class ContainersTab(Vertical, can_focus=True):
             if active:
                 inp.add_class("search-active")
                 inp.styles.display = "block"
+                # Update placeholder based on current search mode
+                if self.search_mode == "image":
+                    inp.placeholder = "Search images (image name/tag)..."
+                else:
+                    inp.placeholder = "Search containers (name, id, status)..."
             else:
                 inp.remove_class("search-active")
                 inp.styles.display = "none"
@@ -285,6 +277,47 @@ class ContainersTab(Vertical, can_focus=True):
     def _get_visible_cards(self) -> list[ContainerCard]:
         """Return list of currently visible container cards."""
         return [c for c in self.query(ContainerCard) if c.styles.display != "none"]
+
+    def _matches(self, card: ContainerCard, query: str) -> bool:
+        """Return True if query matches according to current search mode.
+
+        If search_mode == 'image', only match against the image name.
+        Otherwise (container mode) match against name, id, and status.
+        """
+        mode = self.search_mode or "container"
+        if mode == "image":
+            image = getattr(card, "image", "") or getattr(card, "container_image", "") or ""
+            return query in image.lower()
+
+        # container mode: match id, name and status only (do not match image)
+        cid = getattr(card, "container_id", "") or ""
+        cname = getattr(card, "container_name", "") or ""
+        status = getattr(card, "status", "") or ""
+        hay = f"{cid} {cname} {status}".lower()
+        return query in hay
+
+    # ---- New search actions ----
+    def action_focus_search_container(self) -> None:
+        """Activate search in container mode (/c)."""
+        inp = self._get_search_input()
+        if inp:
+            self.search_mode = "container"
+            self.search_active = True
+            inp.value = ""
+            inp.placeholder = "Search containers (name, id, status)..."
+            inp.styles.display = "block"
+            self.app.set_focus(inp)
+
+    def action_focus_image_search(self) -> None:
+        """Activate search in image mode (/i)."""
+        inp = self._get_search_input()
+        if inp:
+            self.search_mode = "image"
+            self.search_active = True
+            inp.value = ""
+            inp.placeholder = "Search images (image name/tag)..."
+            inp.styles.display = "block"
+            self.app.set_focus(inp)
     
     # ---- Actions ----
     def action_focus_next(self) -> None:

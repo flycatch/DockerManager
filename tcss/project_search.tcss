@@ -17,7 +17,7 @@
     background: #1e1e2e;
     padding: 0 0;
     height: 3;                      /* consistent height */
-    width: 24.5%;                    /* full width */
+    width: 20%;                    /* full width */
     margin: 0 0;                /* little spacing below */
     layer: overlay;
     dock: bottom;

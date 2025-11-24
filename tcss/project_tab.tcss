@@ -33,7 +33,7 @@
   background: #1e1e2e;
   height: 1fr;
   overflow: auto;
-  width: 50;
+  width: 20%;
   color: #cdd6f4;
   scrollbar-gutter: stable;
   border-title-color: #89b4fa;
@@ -63,10 +63,9 @@
 }
 
 .tree--cursor {
-  background: #45475a;
-  color: #94e2d5;
-  text-style: bold;
-  border: round #89b4fa;
+  background: #89b4fa;
+  color: #313244;
+  text-style: bold reverse;
 }
 
 .tree--guides {
