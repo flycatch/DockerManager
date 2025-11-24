@@ -21,8 +21,8 @@ class ContainerActionScreen(ModalScreen):
         Binding("left", "switch_tab_prev", "Previous Tab"),
         Binding("right", "switch_tab_next", "Next Tab"),
         Binding("escape", "handle_escape", "Close", key_display="ESC"),
-        Binding("s", "do_action('start')", "Start"),
-        Binding("p", "do_action('stop')", "Stop"),
+        Binding("u", "do_action('start')", "Start"),
+        Binding("d", "do_action('stop')", "Stop"),
         Binding("r", "do_action('restart')", "Restart"),
     ]
     
