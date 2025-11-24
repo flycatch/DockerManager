@@ -33,7 +33,7 @@
   background: #1e1e2e;
   height: 1fr;
   overflow: auto;
-  width: 50;
+  width: 20%;
   color: #cdd6f4;
   scrollbar-gutter: stable;
   border-title-color: #89b4fa;
