@@ -3,7 +3,6 @@ from textual import events
 from textual_terminal import Terminal
 from textual.app import ComposeResult
 from textual.widgets import Static
-import shutil
 
 # --- Monkey patch textual-terminal key handling ---
 
@@ -55,8 +54,10 @@ class ContainerShell(Static):
 
     def compose(self) -> ComposeResult:
         """Create a terminal running docker exec."""
-        shell = "/bin/bash" if shutil.which("bash") else "/bin/sh"
-        docker_cmd = f"docker exec -i -t {self.container_id} {shell}"
+        docker_cmd = (
+            f"docker exec -i -t {self.container_id} "
+            "sh -lc 'command -v bash >/dev/null 2>&1 && exec bash || exec sh'"
+        )
 
         self.terminal = Terminal(
             command=docker_cmd,

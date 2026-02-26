@@ -441,8 +441,15 @@ class TerminalEmulator:
         self.pid, fd = pty.fork()
         if self.pid == 0:
             argv = shlex.split(command)
-            # OPTIMIZE: do not use a fixed LC_ALL
-            env = dict(TERM="xterm", LC_ALL="en_US.UTF-8", HOME=str(Path.home()))
+            # Preserve host PATH and other vars so command lookup works on macOS.
+            env = os.environ.copy()
+            env.update(
+                {
+                    "TERM": "xterm",
+                    "LC_ALL": env.get("LC_ALL", "en_US.UTF-8"),
+                    "HOME": str(Path.home()),
+                }
+            )
             os.execvpe(argv[0], argv, env)
 
         return fd
