@@ -488,7 +488,15 @@ class TerminalEmulator:
 
         def on_output():
             try:
-                self.data_or_disconnect = self.p_out.read(65536).decode()
+                raw = self.p_out.read(65536)
+                # On macOS PTYs, child exit may surface as EOF (b"") instead of
+                # raising an exception. Treat that as a disconnect.
+                if raw == b"":
+                    loop.remove_reader(self.p_out)
+                    self.data_or_disconnect = None
+                    self.event.set()
+                    return
+                self.data_or_disconnect = raw.decode()
                 self.event.set()
             except UnicodeDecodeError as error:
                 # NOTE: this happens sometimes, eg in w3m browsing wrongly decoded docs
