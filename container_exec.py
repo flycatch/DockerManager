@@ -71,3 +71,8 @@ class ContainerShell(Static):
         on initial mount."""
         if self.terminal:
             self.terminal.start()
+
+    def ensure_started(self) -> None:
+        """Start (or restart) the terminal emulator if it is not running."""
+        if self.terminal:
+            self.terminal.start()
