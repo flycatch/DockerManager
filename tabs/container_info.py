@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import requests_unixsocket
 
 # Docker socket configuration
-DOCKER_SOCKET_URL = "http+unix://%2Fvar%2Frun%2Fdocker.sock/v1.42"
+DOCKER_SOCKET_URL = "http+unix://%2Fvar%2Frun%2Fdocker.sock"
 session = requests_unixsocket.Session()
 
 class InfoTab(Container):
@@ -82,7 +82,14 @@ def get_container_info_dict(container_id: str) -> dict:
     # Add size=1 parameter to get container size information
     resp = session.get(url, params={"size": 1})
     if resp.status_code != 200:
-        return {"Error": f"Failed to fetch container info (HTTP {resp.status_code})"}
+        message = ""
+        try:
+            payload = resp.json()
+            message = payload.get("message", "") if isinstance(payload, dict) else ""
+        except Exception:
+            message = ""
+        suffix = f": {message}" if message else ""
+        return {"Error": f"Failed to fetch container info (HTTP {resp.status_code}){suffix}"}
 
     data = resp.json()
     
