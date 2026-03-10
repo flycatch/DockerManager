@@ -1,0 +1,117 @@
+ImageActionScreen {
+    background: #1e1e2e 95%;
+}
+
+#images-tab {
+    height: 1fr;
+    overflow: auto;
+}
+
+#image-list-header {
+    margin: 0 1;
+    padding: 0 1;
+    color: #f9e2af;
+    background: #181825;
+    border: round #45475a;
+}
+
+#images-no-results {
+    margin: 0 1;
+    padding: 0 1;
+    color: #f38ba8;
+}
+
+.image-card {
+    padding: 0;
+    border: none;
+    layout: grid;
+    grid-size: 5;
+    grid-columns: 3fr 1.4fr 1fr 1.4fr 1fr;
+    margin: 0 1;
+}
+
+.image-card:odd {
+    background: #313244;
+}
+
+.image-card:even {
+    background: #1e1e2e;
+}
+
+.image-card:focus {
+    background: #537fc5cc;
+    text-style: bold;
+}
+
+.image-col {
+    content-align: left middle;
+}
+
+.image-col.reference {
+    color: #94e2d5;
+}
+
+.image-col.image-id {
+    color: #a6adc8;
+}
+
+.image-col.size {
+    color: #a6e3a1;
+}
+
+.image-col.created {
+    color: #f5c2e7;
+}
+
+.image-col.containers {
+    color: #cba6f7;
+}
+
+#image-filesystem-tab {
+    layout: horizontal;
+    height: 1fr;
+    overflow: hidden;
+}
+
+#image-filesystem-tree {
+    width: 42%;
+    height: 1fr;
+    border: round #45475a;
+    background: #181825;
+    overflow: auto;
+}
+
+#image-filesystem-preview-scroll {
+    width: 58%;
+    height: 1fr;
+    border: round #45475a;
+    background: #181825;
+    overflow: auto;
+}
+
+#image-filesystem-preview {
+    width: 100%;
+    height: auto;
+    color: #cdd6f4;
+    padding: 1;
+    text-wrap: wrap;
+}
+
+#image-info-pane,
+#image-filesystem-pane {
+    overflow: hidden;
+}
+
+#image-info-tab,
+#image-info-scroll {
+    height: 1fr;
+    width: 100%;
+}
+
+#image-info-container {
+    margin: 0;
+    padding: 1;
+    border: round #45475a;
+    width: 100%;
+    height: auto;
+}

@@ -15,7 +15,14 @@ class LoadingOverlay(Container):
 
     def compose(self) -> ComposeResult:
         yield LoadingIndicator()
-        yield Static(self.message, classes="loading-message")
+        yield Static(self.message, id="loading-message", classes="loading-message")
+
+    def update_message(self, message: str) -> None:
+        self.message = message
+        try:
+            self.query_one("#loading-message", Static).update(message)
+        except NoMatches:
+            pass
 
     async def remove_self(self) -> None:
         """Safely remove overlay if mounted."""

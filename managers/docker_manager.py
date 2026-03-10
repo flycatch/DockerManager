@@ -7,15 +7,19 @@ from textual.containers import Vertical
 from textual.widgets import TabbedContent
 from rich.text import Text
 from cards.container_card import ContainerCard
+from cards.image_card import ImageCard
 from container_action_menu import ContainerActionScreen
 from service import (
     get_projects_with_containers,
+    get_images,
+    remove_all_image_temp_containers,
     wait_for_container_state,
     start_container,
     stop_container,
     restart_container
 )
 from tabs.container_tab import ContainersTab
+from tabs.images_tab import ImagesTab
 from tabs.project_tab import ProjectsTab
 from cards.container_header import ContainerHeader
 from widgets.loading_screen import LoadingOverlay
@@ -58,7 +62,8 @@ class DockerManager(App):
         "../tcss/filter.tcss", "../tcss/standalone_search.tcss",
         "../tcss/project_tab.tcss", "../tcss/shell.tcss", "../tcss/logs.tcss",
         "../tcss/screen.tcss", "../tcss/standalone_tab.tcss", "../tcss/container_info.tcss",
-        "../tcss/container_stats.tcss", "../tcss/loading_screen.tcss", "../tcss/confirm_overlay.tcss"
+        "../tcss/container_stats.tcss", "../tcss/loading_screen.tcss", "../tcss/confirm_overlay.tcss",
+        "../tcss/image_browser.tcss"
     ]
     
     ENABLE_COMMAND_PALETTE = False
@@ -86,10 +91,12 @@ class DockerManager(App):
         self.cards: Dict[str, ContainerCard] = {}
         self.uncategorized_cards: Dict[str, ContainerCard] = {}
         self.projects: dict[str, list[tuple[int, str, str, str, str, str, str]]] = {}
+        self.image_cards: Dict[str, ImageCard] = {}
         self._refreshing = False
         self.current_project: str | None = None
         self._last_focused_id: str | None = None
         self._last_containers: dict[str, tuple[str, str, str, str, str]] = {}
+        self._last_images: dict[str, tuple[str, str, str, str]] = {}
 
     def compose(self) -> ComposeResult:
         """Compose the application's user interface layout.
@@ -126,10 +133,14 @@ class DockerManager(App):
                         yield ContainerHeader()
                         self.container_list = Vertical(id="container-list")
                         yield self.container_list
+            with TabPane("🟣 Images", id="tab-images"):
+                self.images_tab = ImagesTab(id="images-tab")
+                yield self.images_tab
 
         yield Footer()
 
     async def on_mount(self) -> None:
+        await asyncio.to_thread(remove_all_image_temp_containers)
         self.set_interval(2.0, self.trigger_background_refresh)
         await self.refresh_projects()
         # Start with uncategorized tab
@@ -184,6 +195,13 @@ class DockerManager(App):
             if first_node.data:
                 self.run_worker(self.refresh_container_list(first_node.data), group="refresh")
             self.set_focus(self.project_tree)
+
+    def action_goto_images(self) -> None:
+        self.tabbed_content.active = "tab-images"
+        cards = list(self.images_tab.query(ImageCard))
+        if cards:
+            self.set_focus(cards[0])
+            self.images_tab.selected_index = 0
             
     def action_toggle_focus(self) -> None:
         """Toggle focus between project tree and container list in Services tab."""
@@ -220,6 +238,8 @@ class DockerManager(App):
             self.action_goto_uncategorized()
         elif next_id == "tab-projects":
             self.action_goto_projects()
+        elif next_id == "tab-images":
+            self.action_goto_images()
 
 
     def action_prev_tab(self) -> None:
@@ -239,6 +259,8 @@ class DockerManager(App):
             self.action_goto_uncategorized()
         elif prev_id == "tab-projects":
             self.action_goto_projects()
+        elif prev_id == "tab-images":
+            self.action_goto_images()
 
 
 
@@ -267,6 +289,11 @@ class DockerManager(App):
                 if first_card:
                     self.set_focus(first_card)
                     self.uncategorized_list.selected_index = 0
+        elif event.pane.id == "tab-images":
+            cards = list(self.images_tab.query(ImageCard))
+            if cards:
+                self.set_focus(cards[0])
+                self.images_tab.selected_index = 0
 
     def is_projects_tab_active(self) -> bool:
         """Check if the Projects tab is currently active"""
@@ -298,6 +325,7 @@ class DockerManager(App):
 
         try:
             all_projects = get_projects_with_containers()
+            all_images = get_images()
             # Flatten into a {cid: (name, image, status)} dict for comparison
             new_snapshot: dict[str, tuple[str, str, str, str, str]] = {}
             for project, containers in all_projects.items():
@@ -309,11 +337,17 @@ class DockerManager(App):
                         # something unexpected; skip this container safely
                         continue
                     new_snapshot[cid] = (name, image, status, ports, created)
+            new_image_snapshot = {
+                image_id: (reference, size, created, containers)
+                for _, image_id, reference, size, created, containers in all_images
+            }
             # --- CASE 1: Only statuses changed ---
             if (
                 set(new_snapshot.keys()) == set(self._last_containers.keys())
                 and all(new_snapshot[cid][0:2] == self._last_containers[cid][0:2] 
                         for cid in new_snapshot)
+                and set(new_image_snapshot.keys()) == set(self._last_images.keys())
+                and all(new_image_snapshot[img_id] == self._last_images[img_id] for img_id in new_image_snapshot)
             ):
                 # Just update statuses (faster, no UI rebuild)
                 for cid, (name, image, status, ports, created) in new_snapshot.items():
@@ -321,10 +355,12 @@ class DockerManager(App):
                     if card:
                         card.update_details(name, image, status, ports, created)
                 self._last_containers = new_snapshot
+                self._last_images = new_image_snapshot
                 return
 
             # --- CASE 2: Projects/membership changed → full sync ---
             self._last_containers = new_snapshot
+            self._last_images = new_image_snapshot
 
             # Update Uncategorized View
             if "Uncategorized" in all_projects:
@@ -354,12 +390,42 @@ class DockerManager(App):
                         # Update container list without changing focus
                         await self.refresh_container_list(node.data or [])
                         break
+            await self.sync_image_list(all_images)
 
         finally:
             self._refreshing = False
 
     async def refresh_container_list(self, containers: list[tuple[int, str, str, str, str, str, str]]):
         await self.sync_card_list(containers, self.cards, self.container_list)
+
+    async def sync_image_list(self, image_data: list[tuple[int, str, str, str, str, str]]) -> None:
+        current_focused = self.screen.focused
+        focused_id = getattr(current_focused, "image_id", None) if isinstance(current_focused, ImageCard) else None
+
+        new_ids = {image_id for _, image_id, *_ in image_data}
+        old_ids = set(self.image_cards.keys())
+
+        for image_id in old_ids - new_ids:
+            card = self.image_cards.pop(image_id)
+            await card.remove()
+
+        details_map = {
+            image_id: (reference, size, created, containers)
+            for _, image_id, reference, size, created, containers in image_data
+        }
+        for image_id in old_ids & new_ids:
+            if image_id in details_map:
+                reference, size, created, containers = details_map[image_id]
+                self.image_cards[image_id].update_details(reference, size, created, containers)
+
+        for idx, image_id, reference, size, created, containers in image_data:
+            if image_id not in self.image_cards:
+                card = ImageCard(idx, image_id, reference, size, created, containers)
+                self.image_cards[image_id] = card
+                await self.images_tab.mount(card)
+
+        if focused_id and focused_id in self.image_cards:
+            self.set_focus(self.image_cards[focused_id])
 
     
 
@@ -432,6 +498,8 @@ class DockerManager(App):
 
     async def on_tree_node_highlighted(self, event: Tree.NodeHighlighted) -> None:
         """Handle project tree node hover/focus events."""
+        if event.control is not self.project_tree:
+            return
         containers: Any = event.node.data
         if containers:
             # Just preview the containers without changing focus
@@ -443,6 +511,8 @@ class DockerManager(App):
 
     async def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
         """Handle project tree node selection (Enter key)."""
+        if event.control is not self.project_tree:
+            return
         containers: Any = event.node.data
         if containers:
             await self.refresh_container_list(containers)

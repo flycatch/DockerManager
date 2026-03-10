@@ -1,6 +1,12 @@
 
 from __future__ import annotations
 from typing import Dict, List, Tuple, Optional
+import base64
+import io
+import os
+import stat as statlib
+import tarfile
+import json
 import requests_unixsocket
 from datetime import datetime
 import time
@@ -12,6 +18,7 @@ session = requests_unixsocket.Session()
 ContainerTuple7 = Tuple[int, str, str, str, str, str, str]
 # Legacy 5-tuple: (idx, id, name, image, status)
 ContainerTuple5 = Tuple[int, str, str, str, str]
+ImageTuple6 = Tuple[int, str, str, str, str, str]
 
 
 def _safe_get_name(container: dict) -> str:
@@ -411,3 +418,420 @@ def delete_project(project: str, force: bool = True) -> bool:
 
 def restart_project(project: str) -> bool:
     return stop_project(project) and start_project(project)
+
+
+def get_images() -> List[ImageTuple6]:
+    """Return Docker images for the top-level images tab."""
+    try:
+        response = session.get(f"{DOCKER_SOCKET_URL}/images/json", params={"all": "1"})
+    except Exception:
+        return []
+    if response.status_code != 200:
+        return []
+    container_counts = _get_container_counts_by_image_id()
+
+    images = response.json() or []
+    rows: List[ImageTuple6] = []
+    for idx, image in enumerate(images, start=1):
+        image_id = str(image.get("Id") or "")
+        tags = image.get("RepoTags") or []
+        digests = image.get("RepoDigests") or []
+        reference = _pick_image_reference(tags, digests, image_id)
+        size = _bytes_to_human_image(int(image.get("Size") or 0))
+        created = _format_created(image.get("Created"))
+        containers = str(container_counts.get(image_id, 0))
+        rows.append((idx, image_id, reference, size, created, containers))
+    return rows
+
+
+def get_image_info_dict(image_ref: str) -> dict[str, str]:
+    """Fetch detailed image information for the image info tab."""
+    try:
+        response = session.get(f"{DOCKER_SOCKET_URL}/images/{image_ref}/json")
+    except Exception as exc:
+        return {"Error:": f"Failed to fetch image info: {exc}"}
+    if response.status_code != 200:
+        return {"Error:": f"Failed to fetch image info (HTTP {response.status_code})"}
+
+    payload = response.json() or {}
+    config = payload.get("Config") or {}
+    rootfs = payload.get("RootFS") or {}
+    metadata = payload.get("Metadata") or {}
+
+    repo_tags = payload.get("RepoTags") or []
+    repo_digests = payload.get("RepoDigests") or []
+    exposed_ports = sorted((config.get("ExposedPorts") or {}).keys())
+    env_list = config.get("Env") or []
+    cmd = " ".join(config.get("Cmd") or []) or "<default>"
+    entrypoint = " ".join(config.get("Entrypoint") or []) or "<default>"
+    labels = config.get("Labels") or {}
+
+    return {
+        "Reference:": _pick_image_reference(repo_tags, repo_digests, str(payload.get("Id") or "")),
+        "Image ID:": str(payload.get("Id") or "")[:19],
+        "Created:": str(payload.get("Created") or ""),
+        "Size:": _bytes_to_human_image(int(payload.get("Size") or 0)),
+        "Virtual Size:": _bytes_to_human_image(int(payload.get("VirtualSize") or 0)),
+        "OS / Arch:": f"{payload.get('Os') or 'unknown'} / {payload.get('Architecture') or 'unknown'}",
+        "Author:": str(payload.get("Author") or "<unknown>"),
+        "User:": str(config.get("User") or "<default>"),
+        "Working Dir:": str(config.get("WorkingDir") or "<none>"),
+        "Entrypoint:": entrypoint,
+        "Command:": cmd,
+        "Env Vars:": str(len(env_list)),
+        "Exposed Ports:": ", ".join(exposed_ports) if exposed_ports else "none",
+        "Tags:": ", ".join(repo_tags) if repo_tags else "none",
+        "Digests:": ", ".join(repo_digests) if repo_digests else "none",
+        "Labels:": str(len(labels)),
+        "RootFS Type:": str(rootfs.get("Type") or "unknown"),
+        "RootFS Layers:": str(len(rootfs.get("Layers") or [])),
+        "Last Tag Time:": str(metadata.get("LastTagTime") or "unknown"),
+    }
+
+
+def create_temp_container_for_image(image_ref: str) -> str | None:
+    """Create and start a temporary container for image filesystem browsing."""
+    shell_attempts = [
+        ["/bin/sh", "-lc", "while true; do sleep 3600; done"],
+        ["sh", "-lc", "while true; do sleep 3600; done"],
+        ["/busybox/sh", "-lc", "while true; do sleep 3600; done"],
+    ]
+    for cmd in shell_attempts:
+        body = {
+            "Image": image_ref,
+            "Entrypoint": [cmd[0]],
+            "Cmd": cmd[1:],
+            "Labels": {
+                "codex.image_fs_temp": "true",
+                "codex.image_ref": image_ref,
+            },
+            "AttachStdin": False,
+            "AttachStdout": False,
+            "AttachStderr": False,
+            "Tty": False,
+            "NetworkDisabled": True,
+        }
+        try:
+            response = session.post(f"{DOCKER_SOCKET_URL}/containers/create", json=body)
+        except Exception:
+            continue
+        if response.status_code != 201:
+            continue
+        payload = response.json() or {}
+        container_id = str(payload.get("Id") or "")
+        if not container_id:
+            continue
+        try:
+            started = session.post(f"{DOCKER_SOCKET_URL}/containers/{container_id}/start")
+        except Exception:
+            remove_container(container_id)
+            continue
+        if started.status_code == 204 and wait_for_container_state(container_id, "running", timeout=4.0):
+            return container_id
+        remove_container(container_id)
+    return None
+
+
+def remove_container(container_id: str) -> bool:
+    try:
+        response = session.delete(
+            f"{DOCKER_SOCKET_URL}/containers/{container_id}",
+            params={"force": "1"},
+        )
+    except Exception:
+        return False
+    return response.status_code in (204, 404)
+
+
+def remove_image_temp_containers(image_ref: str) -> None:
+    try:
+        response = session.get(
+            f"{DOCKER_SOCKET_URL}/containers/json",
+            params={"all": "1", "filters": json.dumps({"label": [f"codex.image_ref={image_ref}", "codex.image_fs_temp=true"]})},
+        )
+    except Exception:
+        return
+    if response.status_code != 200:
+        return
+    for container in response.json() or []:
+        container_id = str(container.get("Id") or "")
+        if container_id:
+            remove_container(container_id)
+
+
+def remove_all_image_temp_containers() -> None:
+    try:
+        response = session.get(
+            f"{DOCKER_SOCKET_URL}/containers/json",
+            params={"all": "1", "filters": json.dumps({"label": ["codex.image_fs_temp=true"]})},
+        )
+    except Exception:
+        return
+    if response.status_code != 200:
+        return
+    for container in response.json() or []:
+        container_id = str(container.get("Id") or "")
+        if container_id:
+            remove_container(container_id)
+
+
+def list_container_filesystem(container_id: str, path: str) -> tuple[str, list[dict[str, object]], str | None]:
+    exec_result = _exec_list_directory(container_id, path)
+    if exec_result is not None:
+        return exec_result
+    """List immediate entries for a path inside a container filesystem."""
+    try:
+        response = session.get(
+            f"{DOCKER_SOCKET_URL}/containers/{container_id}/archive",
+            params={"path": path},
+        )
+    except Exception as exc:
+        return "error", [], f"Failed to browse filesystem: {exc}"
+    if response.status_code != 200:
+        return "error", [], f"Failed to browse filesystem (HTTP {response.status_code})"
+
+    stat_info = _decode_archive_stat(response.headers.get("X-Docker-Container-Path-Stat"))
+    kind = _path_kind(stat_info)
+    if kind == "file":
+        return "file", [], None
+
+    try:
+        archive = tarfile.open(fileobj=io.BytesIO(response.content), mode="r:*")
+    except Exception as exc:
+        return "error", [], f"Failed to parse filesystem archive: {exc}"
+
+    entries: dict[str, dict[str, object]] = {}
+    root_name = str(stat_info.get("name") or "").strip("/")
+
+    with archive:
+        for member in archive.getmembers():
+            rel_name = _archive_relative_name(member.name, root_name)
+            if not rel_name:
+                continue
+            first_part = rel_name.split("/", 1)[0]
+            child_path = _join_container_path(path, first_part)
+            entry = entries.get(first_part)
+            inferred_dir = "/" in rel_name or member.isdir()
+            if entry is None:
+                entries[first_part] = {
+                    "name": first_part,
+                    "path": child_path,
+                    "is_dir": inferred_dir,
+                    "size": int(member.size or 0),
+                }
+            elif inferred_dir:
+                entry["is_dir"] = True
+
+    ordered = sorted(entries.values(), key=lambda item: (not bool(item["is_dir"]), str(item["name"])))
+    return "dir", ordered, None
+
+
+def read_container_file_preview(container_id: str, path: str, limit: int = 32768) -> str:
+    exec_preview = _exec_file_preview(container_id, path, limit)
+    if exec_preview is not None:
+        return exec_preview
+    """Read a text preview for a file inside a container filesystem."""
+    try:
+        response = session.get(
+            f"{DOCKER_SOCKET_URL}/containers/{container_id}/archive",
+            params={"path": path},
+        )
+    except Exception as exc:
+        return f"Failed to read file: {exc}"
+    if response.status_code != 200:
+        return f"Failed to read file (HTTP {response.status_code})"
+
+    try:
+        archive = tarfile.open(fileobj=io.BytesIO(response.content), mode="r:*")
+    except Exception as exc:
+        return f"Failed to parse file archive: {exc}"
+
+    with archive:
+        for member in archive.getmembers():
+            if not member.isfile():
+                continue
+            extracted = archive.extractfile(member)
+            if extracted is None:
+                continue
+            data = extracted.read(limit + 1)
+            if b"\x00" in data:
+                return f"Binary file: {path}"
+            text = data[:limit].decode("utf-8", errors="replace")
+            if len(data) > limit:
+                text += "\n\n[truncated]"
+            return text or "<empty file>"
+    return f"Unable to preview file: {path}"
+
+
+def _pick_image_reference(tags: list[str], digests: list[str], image_id: str) -> str:
+    if tags:
+        first = next((tag for tag in tags if tag and tag != "<none>:<none>"), tags[0])
+        return str(first)
+    if digests:
+        return str(digests[0])
+    short_id = image_id.split(":")[-1][:12] if image_id else "unknown"
+    return f"sha256:{short_id}"
+
+
+def _bytes_to_human_image(value: int) -> str:
+    size = float(value)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if size < 1024 or unit == "TiB":
+            if unit == "B":
+                return f"{int(size)}{unit}"
+            return f"{size:.2f}{unit}"
+        size /= 1024.0
+    return f"{int(value)}B"
+
+
+def _decode_archive_stat(header_value: str | None) -> dict[str, object]:
+    if not header_value:
+        return {}
+    try:
+        padding = "=" * (-len(header_value) % 4)
+        decoded = base64.urlsafe_b64decode(header_value + padding)
+        import json
+
+        payload = json.loads(decoded.decode("utf-8"))
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+
+def _path_kind(stat_info: dict[str, object]) -> str:
+    mode = int(stat_info.get("mode") or 0)
+    if statlib.S_ISDIR(mode):
+        return "dir"
+    if statlib.S_ISREG(mode):
+        return "file"
+    return "dir"
+
+
+def _archive_relative_name(member_name: str, root_name: str) -> str:
+    normalized = member_name.strip().lstrip("./").lstrip("/")
+    if not normalized:
+        return ""
+    if root_name and normalized == root_name:
+        return ""
+    if root_name and normalized.startswith(root_name + "/"):
+        return normalized[len(root_name) + 1 :]
+    return normalized
+
+
+def _join_container_path(parent: str, child: str) -> str:
+    if parent == "/":
+        return f"/{child}"
+    return os.path.join(parent, child).replace("\\", "/")
+
+
+def _get_container_counts_by_image_id() -> dict[str, int]:
+    try:
+        response = session.get(f"{DOCKER_SOCKET_URL}/containers/json", params={"all": "1"})
+    except Exception:
+        return {}
+    if response.status_code != 200:
+        return {}
+    counts: dict[str, int] = {}
+    for container in response.json() or []:
+        labels = container.get("Labels") or {}
+        if labels.get("codex.image_fs_temp") == "true":
+            continue
+        image_id = str(container.get("ImageID") or "")
+        if image_id:
+            counts[image_id] = counts.get(image_id, 0) + 1
+    return counts
+
+
+
+
+def _exec_in_container(container_id: str, cmd: list[str]) -> tuple[int | None, str | None]:
+    body = {
+        "AttachStdout": True,
+        "AttachStderr": True,
+        "Cmd": cmd,
+        "Tty": False,
+    }
+    try:
+        create_resp = session.post(f"{DOCKER_SOCKET_URL}/containers/{container_id}/exec", json=body)
+    except Exception:
+        return None, None
+    if create_resp.status_code != 201:
+        return None, None
+    exec_id = str((create_resp.json() or {}).get("Id") or "")
+    if not exec_id:
+        return None, None
+    try:
+        start_resp = session.post(
+            f"{DOCKER_SOCKET_URL}/exec/{exec_id}/start",
+            json={"Detach": False, "Tty": False},
+        )
+        inspect_resp = session.get(f"{DOCKER_SOCKET_URL}/exec/{exec_id}/json")
+    except Exception:
+        return None, None
+    if start_resp.status_code != 200 or inspect_resp.status_code != 200:
+        return None, None
+    exit_code = (inspect_resp.json() or {}).get("ExitCode")
+    try:
+        output = start_resp.content.decode("utf-8", errors="replace")
+    except Exception:
+        output = ""
+    return int(exit_code) if exit_code is not None else None, output
+
+
+def _exec_list_directory(container_id: str, path: str) -> tuple[str, list[dict[str, object]], str | None] | None:
+    script = (
+        'p="$1"; '
+        'if [ -d "$p" ]; then printf "__KIND__:dir\\n"; ls -1Ap "$p"; '
+        'elif [ -f "$p" ]; then printf "__KIND__:file\\n"; '
+        'else printf "__KIND__:error\\n"; exit 2; fi'
+    )
+    for shell in ("/bin/sh", "sh", "/busybox/sh"):
+        exit_code, output = _exec_in_container(container_id, [shell, "-lc", script, "_", path])
+        if exit_code is None:
+            continue
+        lines = output.splitlines()
+        if not lines:
+            return None
+        marker = lines[0].strip()
+        if marker == "__KIND__:file":
+            return "file", [], None
+        if marker == "__KIND__:dir":
+            entries: list[dict[str, object]] = []
+            for raw_name in lines[1:]:
+                name = raw_name.strip()
+                if not name:
+                    continue
+                is_dir = name.endswith("/")
+                clean_name = name[:-1] if is_dir else name
+                entries.append(
+                    {
+                        "name": clean_name,
+                        "path": _join_container_path(path, clean_name),
+                        "is_dir": is_dir,
+                        "size": 0,
+                    }
+                )
+            entries.sort(key=lambda item: (not bool(item["is_dir"]), str(item["name"])))
+            return "dir", entries, None
+        if marker == "__KIND__:error":
+            return "error", [], f"Path not found: {path}"
+        if exit_code == 0:
+            return None
+    return None
+
+
+def _exec_file_preview(container_id: str, path: str, limit: int) -> str | None:
+    script = (
+        'p="$1"; '
+        'if [ ! -f "$p" ]; then exit 2; fi; '
+        f'head -c {int(limit)} "$p"'
+    )
+    for shell in ("/bin/sh", "sh", "/busybox/sh"):
+        exit_code, output = _exec_in_container(container_id, [shell, "-lc", script, "_", path])
+        if exit_code is None:
+            continue
+        if exit_code == 0:
+            return output or "<empty file>"
+        if exit_code == 2:
+            return f"Unable to preview file: {path}"
+    return None
