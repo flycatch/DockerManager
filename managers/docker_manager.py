@@ -19,9 +19,6 @@ from tabs.project_tab import ProjectsTab
 from cards.container_header import ContainerHeader
 from widgets.loading_screen import LoadingOverlay
 
-<<<<<<< Updated upstream
-=======
-
 class ProjectTree(Tree):
     """Project tree that reserves Shift+Left/Right for app-level tab switching."""
 
@@ -39,9 +36,6 @@ class ProjectTree(Tree):
         app_next = getattr(self.app, "action_next_tab", None)
         if callable(app_next):
             app_next()
-
-
->>>>>>> Stashed changes
 class DockerManager(App):
     """Main application class for the Docker Manager TUI.
     
@@ -123,7 +117,7 @@ class DockerManager(App):
             # --- Projects tab ---
             with TabPane("🟢 Services", id="tab-projects"):
                 with ProjectsTab(id="projects-layout"):
-                    self.project_tree = Tree("🔹Compose Projects", id="project-tree")
+                    self.project_tree = ProjectTree("🔹Compose Projects", id="project-tree")
                     self.project_tree.can_focus = True
                     self.project_tree.show_guides = True
                     yield self.project_tree

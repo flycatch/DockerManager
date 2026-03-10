@@ -391,13 +391,6 @@ class ContainerActionScreen(ModalScreen):
         # Now perform tab-specific actions (load info or focus terminal)
         if tab_kind == "info":
             self.call_after_refresh(lambda: asyncio.create_task(self.load_container_info()))
-<<<<<<< Updated upstream
-        elif tab_id in ("terminal-tab",) or tab_label == "Terminal":
-            self.call_after_refresh(lambda: self.set_focus(self.query_one("#container-terminal")))
-        else:
-            self.set_focus(None)
-
-=======
             self.call_after_refresh(self._focus_info_tab)
         elif tab_kind == "stats":
             self.call_after_refresh(self._focus_stats_tab)
@@ -456,8 +449,6 @@ class ContainerActionScreen(ModalScreen):
             self.set_focus(self.query_one("#container-terminal"))
         except Exception:
             self.app.bell()
-
->>>>>>> Stashed changes
     def notify_bindings_change(self) -> None:
         try:
             if getattr(self, "_last_activation", 0) and (time.time() - self._last_activation) < 0.05:
@@ -782,8 +773,3 @@ class ContainerActionScreen(ModalScreen):
         else:
             self.current_match = (self.current_match - 1) % len(self.log_matches)
         self.focus_current_match()
-<<<<<<< Updated upstream
-
-
-=======
->>>>>>> Stashed changes

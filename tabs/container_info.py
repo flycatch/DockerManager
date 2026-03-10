@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import requests_unixsocket
 
 # Docker socket configuration
-DOCKER_SOCKET_URL = "http+unix://%2Fvar%2Frun%2Fdocker.sock/v1.42"
+DOCKER_SOCKET_URL = "http+unix://%2Fvar%2Frun%2Fdocker.sock"
 session = requests_unixsocket.Session()
 
 class InfoTab(Container):
@@ -44,10 +44,9 @@ class InfoTab(Container):
             container.mount(Static("No container information available"))
             return
         
+        lines: list[Horizontal] = []
         for label, value in info_data.items():
             # Create the horizontal line container
-            line = Horizontal(classes="info-line")
-            
             # Determine label class based on content
             label_classes = "label"
             if "  " in label:  # Network details have indentation
@@ -67,9 +66,10 @@ class InfoTab(Container):
             
             value_widget = Static(str(value), classes=" ".join(classes))
             
-            # Mount line to container first, then mount widgets to line
-            container.mount(line)
-            line.mount(label_widget, value_widget)
+            lines.append(Horizontal(label_widget, value_widget, classes="info-line"))
+
+        if lines:
+            container.mount(*lines)
         
         # Force refresh of the scroll area to recalculate virtual size
         scroll = self.query_one("#info-scroll", VerticalScroll)

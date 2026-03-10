@@ -2,12 +2,8 @@
 from textual import events
 from textual_terminal import Terminal
 from textual.app import ComposeResult
-<<<<<<< Updated upstream
-from textual.widgets import Static
 import shutil
-=======
 from textual.containers import Container
->>>>>>> Stashed changes
 
 # --- Monkey patch textual-terminal key handling ---
 
