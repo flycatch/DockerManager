@@ -384,4 +384,3 @@ def delete_project(project: str, force: bool = True) -> bool:
 
 def restart_project(project: str) -> bool:
     return stop_project(project) and start_project(project)
-
