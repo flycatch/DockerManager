@@ -9,7 +9,7 @@ stream logs with minimal memory overhead through generator-based iteration.
 """
 
 import requests_unixsocket
-from typing import Generator
+from typing import Callable, Generator
 
 DOCKER_SOCKET_URL = "http+unix://%2Fvar%2Frun%2Fdocker.sock"
 session = requests_unixsocket.Session()
@@ -24,6 +24,7 @@ def stream_logs(
     timestamps: bool = False,
     since: int = 0,
     until: int = 0,
+    stop_check: Callable[[], bool] | None = None,
 ) -> Generator[str, None, None]:
     """Stream logs from a Docker container.
 
@@ -60,17 +61,41 @@ def stream_logs(
         params["until"] = str(until)
 
     url = f"{DOCKER_SOCKET_URL}/containers/{container_id}/logs"
-    response = session.get(url, params=params, stream=True)
 
-    if response.status_code != 200:
-        yield f"[ERROR] HTTP {response.status_code} while fetching logs."
-        return
+    while True:
+        if stop_check and stop_check():
+            return
 
-    # Docker multiplexed format: 8-byte header + content
-    for chunk in response.iter_lines(decode_unicode=False):
-        if chunk:
-            line = chunk[8:] if len(chunk) > 8 else chunk
-            try:
-                yield line.decode("utf-8", errors="ignore")
-            except Exception:
-                yield "<decode error>"
+        response = None
+        try:
+            response = session.get(url, params=params, stream=True, timeout=(1, 1))
+
+            if response.status_code != 200:
+                yield f"[ERROR] HTTP {response.status_code} while fetching logs."
+                return
+
+            # Docker multiplexed format: 8-byte header + content
+            for chunk in response.iter_lines(decode_unicode=False):
+                if stop_check and stop_check():
+                    return
+                if chunk:
+                    line = chunk[8:] if len(chunk) > 8 else chunk
+                    try:
+                        yield line.decode("utf-8", errors="ignore")
+                    except Exception:
+                        yield "<decode error>"
+
+            if not follow:
+                return
+        except Exception:
+            if stop_check and stop_check():
+                return
+            if not follow:
+                yield "[ERROR] Failed while fetching logs."
+                return
+        finally:
+            if response is not None:
+                try:
+                    response.close()
+                except Exception:
+                    pass

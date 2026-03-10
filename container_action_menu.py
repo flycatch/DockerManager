@@ -10,7 +10,11 @@ from typing import List, Any
 import asyncio
 import time
 import re
+from rich.align import Align
+from rich.panel import Panel
+from rich.text import Text
 from container_logs import stream_logs
+from service import get_container_state
 from tabs.container_info import InfoTab
 from tabs.container_stats import StatsTab
 from container_exec import ContainerShell
@@ -62,6 +66,7 @@ class ContainerActionScreen(ModalScreen):
         self.active_tab = "Logs"
         self.log_matches: list[dict] = []
         self.current_match: int = -1
+        self.logs_closed_message: str | None = None
         # timestamp of last tab activation handled here; used to suppress
         # noisy notify_bindings_change calls that race with TabActivated.
         self._last_activation: float = 0.0
@@ -184,6 +189,16 @@ class ContainerActionScreen(ModalScreen):
 
     async def on_unmount(self) -> None:
         self.keep_streaming = False
+        if self.log_update_timer is not None:
+            try:
+                self.log_update_timer.stop()
+            except Exception:
+                pass
+        if self.log_worker is not None:
+            try:
+                self.log_worker.cancel()
+            except Exception:
+                pass
         self._restore_app_bindings()
 
     def _refresh_footer(self) -> None:
@@ -298,6 +313,12 @@ class ContainerActionScreen(ModalScreen):
     def refresh_logs(self):
         scroll_view = self.query_one("#log-scroll", VerticalScroll)
         log_output = self.query_one("#log-output", Static)
+        if self.logs_closed_message:
+            log_output.add_class("log-state-closed")
+            log_output.update(self._build_state_notice(self.logs_closed_message))
+            scroll_view.scroll_to(0, 0, animate=False)
+            return
+        log_output.remove_class("log-state-closed")
         at_bottom = scroll_view.scroll_y + scroll_view.size.height >= scroll_view.virtual_size.height - 1
         recent = self.log_lines[-200:]
         self.log_matches = []
@@ -335,13 +356,28 @@ class ContainerActionScreen(ModalScreen):
 
     def stream_logs(self):
         try:
-            for line in stream_logs(self.container_id, follow=True, tail="100", timestamps=True):
+            current_state = get_container_state(self.container_id)
+            if current_state and current_state not in ("running", "restarting"):
+                self.logs_closed_message = f"Container seems {current_state}"
+                return
+            for line in stream_logs(
+                self.container_id,
+                follow=True,
+                tail="100",
+                timestamps=True,
+                stop_check=lambda: not self.keep_streaming,
+            ):
                 if not self.keep_streaming:
                     break
                 line = line.decode(errors="ignore") if isinstance(line, bytes) else line
                 self.log_lines.append(line)
                 if len(self.log_lines) > 1000:
                     self.log_lines.pop(0)
+                state = get_container_state(self.container_id)
+                if state and state not in ("running", "restarting"):
+                    self.logs_closed_message = f"Container seems {state}"
+                    self.keep_streaming = False
+                    break
         except Exception as e:
             self.log_lines.append(f"[red]Error streaming logs: {e}[/red]")
 
@@ -445,10 +481,24 @@ class ContainerActionScreen(ModalScreen):
     def _focus_terminal_tab(self) -> None:
         try:
             shell = self.query_one(ContainerShell)
-            shell.ensure_started()
-            self.set_focus(self.query_one("#container-terminal"))
+            running = shell.ensure_started()
+            if running:
+                self.set_focus(self.query_one("#container-terminal"))
+            else:
+                self.set_focus(self.query_one("#container-terminal-status"))
         except Exception:
             self.app.bell()
+
+    def _build_state_notice(self, message: str):
+        text = Text(message, style="bold #f9e2af", justify="center")
+        panel = Panel.fit(
+            text,
+            border_style="#f38ba8",
+            title="Container State",
+            title_align="center",
+            padding=(1, 3),
+        )
+        return Align.center(panel, vertical="middle")
     def notify_bindings_change(self) -> None:
         try:
             if getattr(self, "_last_activation", 0) and (time.time() - self._last_activation) < 0.05:

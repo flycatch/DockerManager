@@ -16,15 +16,29 @@ class InfoTab(Container):
         super().__init__(id="info-tab")
         self.container_id = container_id
         self.loading = True
+        self._load_in_flight = False
     
     def on_mount(self) -> None:
-        # Fetch container info asynchronously
         self.call_later(self.load_info)
     
     def load_info(self) -> None:
         """Load container information and update the UI."""
-        info_data = get_container_info_dict(self.container_id)
-        print(f"Fetched info data: {info_data}")  # Debug print
+        if self._load_in_flight or not self.is_mounted:
+            return
+        self._load_in_flight = True
+        self.run_worker(self._load_info_worker, thread=True, group="container-info", exclusive=True)
+
+    def _load_info_worker(self) -> None:
+        try:
+            info_data = get_container_info_dict(self.container_id)
+        except Exception as exc:
+            info_data = {"Error": f"Failed to fetch container info: {exc}"}
+        self.app.call_from_thread(self._apply_info, info_data)
+
+    def _apply_info(self, info_data: dict) -> None:
+        self._load_in_flight = False
+        if not self.is_mounted:
+            return
         self.loading = False
         self.compose_info(info_data)
     
@@ -79,8 +93,7 @@ class InfoTab(Container):
 def get_container_info_dict(container_id: str) -> dict:
     """Fetch detailed container info and return as a dictionary."""
     url = f"{DOCKER_SOCKET_URL}/containers/{container_id}/json"
-    # Add size=1 parameter to get container size information
-    resp = session.get(url, params={"size": 1})
+    resp = session.get(url)
     if resp.status_code != 200:
         message = ""
         try:

@@ -45,6 +45,30 @@ class ContainerCard(Static):
         self.ports = ports
         self.created = created
         self.status_widget: Static | None = None
+        self._id_widget: Static | None = None
+        self._name_widget: Static | None = None
+        self._image_widget: Static | None = None
+        self._created_widget: Static | None = None
+        self._ports_widget: Static | None = None
+
+    @staticmethod
+    def _normalize_status_key(status: str) -> str:
+        value = (status or "").strip().lower()
+        if value.startswith("up"):
+            return "running"
+        if value.startswith("exited"):
+            return "exited"
+        if value.startswith("restarting"):
+            return "restarting"
+        if value.startswith("paused"):
+            return "paused"
+        if value.startswith("dead"):
+            return "dead"
+        if "running" in value:
+            return "running"
+        if "stopped" in value:
+            return "exited"
+        return "other"
 
     @property
     def status_key(self) -> str:
@@ -56,18 +80,7 @@ class ContainerCard(Static):
         This property normalizes Docker's various status strings into a set
         of consistent states that can be used for styling and filtering.
         """
-        s = (self.status or "").lower()
-        if s.startswith("up"):
-            return "running"
-        elif s.startswith("exited"):
-            return "exited"
-        elif s.startswith("restarting"):
-            return "restarting"
-        elif s.startswith("paused"):
-            return "paused"
-        elif s.startswith("dead"):
-            return "dead"
-        return "other"
+        return self._normalize_status_key(self.status)
 
     can_focus = True
 
@@ -88,11 +101,16 @@ class ContainerCard(Static):
         The layout uses CSS grid classes for consistent column alignment
         across multiple cards.
         """
-        yield Static(self.container_id, classes="col id")
-        yield Static(f"[b]{self.container_name}[/b]", classes="col name")
-        yield Static(self.image, classes="col image")
-        yield Static(self.created, classes="col created")
-        yield Static(self.ports, classes="col ports")
+        self._id_widget = Static(self.container_id[:12], classes="col id")
+        yield self._id_widget
+        self._name_widget = Static(f"[b]{self.container_name}[/b]", classes="col name")
+        yield self._name_widget
+        self._image_widget = Static(self.image, classes="col image")
+        yield self._image_widget
+        self._created_widget = Static(self.created, classes="col created")
+        yield self._created_widget
+        self._ports_widget = Static(self.ports, classes="col ports")
+        yield self._ports_widget
         self.status_widget = Static(self.status, classes="col status")
         yield self.status_widget
         # Apply initial status class
@@ -120,12 +138,28 @@ class ContainerCard(Static):
             self.status_widget.remove_class("status-running")
             self.status_widget.remove_class("status-stopped")
             self.status_widget.remove_class("status-exited")
-            if "running" in new_status.lower():
+            status_key = self._normalize_status_key(new_status)
+            if status_key == "running":
                 self.status_widget.add_class("status-running")
-            elif "stopped" in new_status.lower() or "exited" in new_status.lower():
+            elif status_key == "exited":
                 self.status_widget.add_class("status-stopped")
-            elif "paused" in new_status.lower():
+            elif status_key == "paused":
                 self.status_widget.add_class("status-exited")
             self.status_widget.update(new_status)
             self.status_widget.refresh()
             self.refresh()
+
+    def update_details(self, name: str, image: str, status: str, ports: str, created: str) -> None:
+        self.container_name = name
+        self.image = image
+        self.ports = ports
+        self.created = created
+        if self._name_widget is not None:
+            self._name_widget.update(f"[b]{self.container_name}[/b]")
+        if self._image_widget is not None:
+            self._image_widget.update(self.image)
+        if self._created_widget is not None:
+            self._created_widget.update(self.created)
+        if self._ports_widget is not None:
+            self._ports_widget.update(self.ports)
+        self.update_status(status)

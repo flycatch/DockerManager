@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict, List, Tuple, Optional
 import requests_unixsocket
 from datetime import datetime
+import time
 
 DOCKER_SOCKET_URL = "http+unix://%2Fvar%2Frun%2Fdocker.sock"
 session = requests_unixsocket.Session()
@@ -126,7 +127,7 @@ def get_projects_with_containers() -> Dict[str, List[ContainerTuple7]]:
     
     Returns:
         Dict mapping project names to lists of container tuples, where each tuple contains:
-        (idx, short_id, name, image, status, ports, created_at)
+        (idx, full_id, name, image, status, ports, created_at)
         
     This is the canonical data format used throughout the application.
     The function:
@@ -158,14 +159,14 @@ def get_projects_with_containers() -> Dict[str, List[ContainerTuple7]]:
         port_info = _format_ports(container.get("Ports"))
         created_date = _format_created(container.get("Created"))
 
-        short_id = str(container.get("Id", ""))[:12]
+        container_id = str(container.get("Id", ""))
         name = _safe_get_name(container)
         image = _shorten_image(str(container.get("Image", "")))
         status = str(container.get("Status", ""))
 
         container_info: ContainerTuple7 = (
             idx + 1,
-            short_id,
+            container_id,
             name,
             image,
             status,
@@ -215,6 +216,32 @@ def start_container(container_id: str) -> bool:
     """
     resp = session.post(f"{DOCKER_SOCKET_URL}/containers/{container_id}/start")
     return resp.status_code == 204
+
+
+def get_container_state(container_id: str) -> str | None:
+    """Return the Docker state status for a container, e.g. running/exited."""
+    try:
+        resp = session.get(f"{DOCKER_SOCKET_URL}/containers/{container_id}/json")
+    except Exception:
+        return None
+    if resp.status_code != 200:
+        return None
+    payload = resp.json() or {}
+    state = payload.get("State") or {}
+    status = state.get("Status")
+    return str(status).lower() if status else None
+
+
+def wait_for_container_state(container_id: str, target_state: str, timeout: float = 8.0) -> bool:
+    """Poll Docker until the container reaches the target state or timeout expires."""
+    deadline = time.monotonic() + timeout
+    target = target_state.strip().lower()
+    while time.monotonic() < deadline:
+        current_state = get_container_state(container_id)
+        if current_state == target:
+            return True
+        time.sleep(0.25)
+    return False
 
 
 def stop_container(container_id: str, timeout: Optional[int] = None) -> bool:

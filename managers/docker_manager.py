@@ -10,6 +10,7 @@ from cards.container_card import ContainerCard
 from container_action_menu import ContainerActionScreen
 from service import (
     get_projects_with_containers,
+    wait_for_container_state,
     start_container,
     stop_container,
     restart_container
@@ -88,7 +89,7 @@ class DockerManager(App):
         self._refreshing = False
         self.current_project: str | None = None
         self._last_focused_id: str | None = None
-        self._last_containers: dict[str, tuple[str, str, str, str]] = {}
+        self._last_containers: dict[str, tuple[str, str, str, str, str]] = {}
 
     def compose(self) -> ComposeResult:
         """Compose the application's user interface layout.
@@ -136,6 +137,11 @@ class DockerManager(App):
 
     def _get_tabbed(self) -> TabbedContent:
         return self.query_one(TabbedContent)
+
+    def action_quit(self) -> None:
+        while len(self.screen_stack) > 1:
+            self.pop_screen()
+        self.exit()
     
     def key_escape(self) -> None:
         """Handle Escape key globally - but let focused widgets handle it first."""
@@ -293,16 +299,16 @@ class DockerManager(App):
         try:
             all_projects = get_projects_with_containers()
             # Flatten into a {cid: (name, image, status)} dict for comparison
-            new_snapshot = {}
+            new_snapshot: dict[str, tuple[str, str, str, str, str]] = {}
             for project, containers in all_projects.items():
                 for item in containers:
                     # be flexible about tuple length (works if containers are 5-tuple or 7-tuple)
                     try:
-                        _, cid, name, image, status, *rest = item
+                        _, cid, name, image, status, ports, created, *rest = item
                     except ValueError:
                         # something unexpected; skip this container safely
                         continue
-                    new_snapshot[cid] = (name, image, status)
+                    new_snapshot[cid] = (name, image, status, ports, created)
             # --- CASE 1: Only statuses changed ---
             if (
                 set(new_snapshot.keys()) == set(self._last_containers.keys())
@@ -310,10 +316,10 @@ class DockerManager(App):
                         for cid in new_snapshot)
             ):
                 # Just update statuses (faster, no UI rebuild)
-                for cid, (name, image, status) in new_snapshot.items():
+                for cid, (name, image, status, ports, created) in new_snapshot.items():
                     card = self.get_container_card_by_id(cid)
                     if card:
-                        card.update_status(status)
+                        card.update_details(name, image, status, ports, created)
                 self._last_containers = new_snapshot
                 return
 
@@ -393,11 +399,15 @@ class DockerManager(App):
             await card.remove()
 
         # Create a mapping of container ID to status for quick lookup
-        status_map = {cid: status for _, cid, _, _, status, _, _ in container_data}  # Added unpacking for ports and created
+        details_map = {
+            cid: (name, image, status, ports, created)
+            for _, cid, name, image, status, ports, created in container_data
+        }
 
         for cid in old_ids & new_ids:
-            if cid in container_map and cid in status_map:
-                container_map[cid].update_status(status_map[cid])
+            if cid in container_map and cid in details_map:
+                name, image, status, ports, created = details_map[cid]
+                container_map[cid].update_details(name, image, status, ports, created)
         
         # Add new cards - note the additional parameters
         for idx, cid, name, image, status, ports, created in container_data:  # Now unpacking all 7 values
@@ -470,6 +480,8 @@ class DockerManager(App):
                 self.refresh()
                 try:
                     success = await asyncio.to_thread(start_container, cid)
+                    if success:
+                        await asyncio.to_thread(wait_for_container_state, cid, "running")
                     notification_message = f"Started container: {container_name}" if success else f"Failed to start container: {container_name}"
                 finally:
                     await overlay.remove_self()
@@ -479,6 +491,8 @@ class DockerManager(App):
                 self.refresh()
                 try:
                     success = await asyncio.to_thread(stop_container, cid)
+                    if success:
+                        await asyncio.to_thread(wait_for_container_state, cid, "exited")
                     notification_message = f"Stopped container: {container_name}" if success else f"Failed to stop container: {container_name}"
                 finally:
                     await overlay.remove_self()
@@ -488,6 +502,8 @@ class DockerManager(App):
                 self.refresh()
                 try:
                     success = await asyncio.to_thread(restart_container, cid)
+                    if success:
+                        await asyncio.to_thread(wait_for_container_state, cid, "running")
                     notification_message = f"Restarted container: {container_name}" if success else f"Failed to restart container: {container_name}"
                 finally:
                     await overlay.remove_self()

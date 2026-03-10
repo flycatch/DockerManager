@@ -1,8 +1,10 @@
 Screen {
 background: #1e1e2e 95%;
 color: #94a3b8; 
+overflow: hidden;
 
 }
+
 .TabPane,
 .VerticalScroll,
 .Static,
@@ -14,6 +16,15 @@ color: #e6eef8;
 
 }
 
+.TabPane {
+overflow: hidden;
+}
+
+.VerticalScroll {
+overflow-x: hidden;
+overflow-y: auto;
+}
+
 #container-terminal {
 background: #1e1e2e 95%; 
 color: #d6e6ff; 
@@ -21,4 +32,13 @@ border: round #89b4fa;
 width: 1fr;
 height: 1fr;
 
+}
+
+#container-terminal-status {
+background: #1e1e2e 95%;
+color: #e6eef8;
+border: round #89b4fa;
+width: 1fr;
+height: 1fr;
+content-align: center middle;
 }

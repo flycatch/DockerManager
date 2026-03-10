@@ -37,6 +37,14 @@
   text-wrap: wrap;
 }
 
+#log-output.log-state-closed {
+  padding: 2;
+  background: #181825;
+  color: #f9e2af;
+  content-align: center middle;
+  min-height: 100%;
+}
+
 #log-scroll {
     scrollbar-size: 2 1;
 }

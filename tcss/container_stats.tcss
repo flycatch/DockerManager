@@ -1,53 +1,49 @@
 #stats-tab,
-#stats-tab-content {
+#stats-tab-content,
+#stats-layout {
     margin: 0;
     padding: 0;
     background: #1e1e2e;
     width: 100%;
+    height: 1fr;
 }
 
-#stats-scroll {
-    width: 100%;
-    height: 100%;
-    scrollbar-size: 2 1;
+#stats-layout {
+    layout: vertical;
+    overflow: hidden;
 }
 
-#stats-container {
+#stats-summary {
+    height: 7;
     margin: 0;
     padding: 1;
     border: round #45475a;
-    width: 100%;
-    height: auto;
-}
-
-.stats-content {
-    height: auto;
-    min-height: 100%;
+    background: #181825;
+    overflow: hidden;
+    layout: grid;
+    grid-size: 2 4;
+    grid-columns: 1fr 1fr;
+    grid-rows: 1fr 1fr 1fr 1fr;
+    grid-gutter: 0 2;
 }
 
 .stats-line {
     width: 100%;
-    max-width: 100%;
-    height: auto;
-    margin: 0 0;
-    padding: 0 1;
+    margin: 0;
+    padding: 0;
     layout: grid;
     grid-size: 2;
-    grid-columns: 1fr 3fr;
+    grid-columns: 1fr 2fr;
     grid-gutter: 1;
 }
 
 .stats-label {
     color: #89b4fa;
     text-style: bold;
-    text-align: left;
-    padding-left: 1;
 }
 
 .stats-value {
     color: #cdd6f4;
-    text-align: left;
-    padding-left: 1;
     text-wrap: wrap;
 }
 
@@ -58,4 +54,38 @@
 
 .stats-status {
     color: #94e2d5;
+    text-style: bold;
+}
+
+#stats-chart-grid {
+    height: auto;
+    margin-top: 1;
+    layout: grid;
+    grid-size: 2 5;
+    grid-columns: 1fr 1fr;
+    grid-rows: 6 6 6 6 6;
+    grid-gutter: 1;
+    overflow: hidden;
+}
+
+.stats-chart-card {
+    border: round #45475a;
+    background: #181825;
+    padding: 0 1;
+    overflow: hidden;
+    height: 6;
+}
+
+.stats-chart-title {
+    color: #f9e2af;
+    text-style: bold;
+    margin-bottom: 0;
+}
+
+.stats-chart {
+    height: auto;
+    color: #cdd6f4;
+    content-align: left top;
+    text-wrap: nowrap;
+    overflow: hidden;
 }
