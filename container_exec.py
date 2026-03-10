@@ -2,8 +2,12 @@
 from textual import events
 from textual_terminal import Terminal
 from textual.app import ComposeResult
+<<<<<<< Updated upstream
 from textual.widgets import Static
 import shutil
+=======
+from textual.containers import Container
+>>>>>>> Stashed changes
 
 # --- Monkey patch textual-terminal key handling ---
 
@@ -45,7 +49,7 @@ Terminal.on_key = patched_on_key
 
 # --- Container shell widget using textual-terminal ---
 
-class ContainerShell(Static):
+class ContainerShell(Container):
     """Widget that runs an interactive shell inside a Docker container."""
 
     def __init__(self, container_id: str, **kwargs):
@@ -68,5 +72,10 @@ class ContainerShell(Static):
         """Start the terminal when mounted. Focus is handled by the parent screen
         when the Terminal tab becomes active so the terminal doesn't steal focus
         on initial mount."""
+        # Force shell area to fill available tab space so the PTY can resize.
+        self.styles.width = "1fr"
+        self.styles.height = "1fr"
         if self.terminal:
+            self.terminal.styles.width = "1fr"
+            self.terminal.styles.height = "1fr"
             self.terminal.start()

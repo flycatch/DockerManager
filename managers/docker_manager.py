@@ -19,6 +19,29 @@ from tabs.project_tab import ProjectsTab
 from cards.container_header import ContainerHeader
 from widgets.loading_screen import LoadingOverlay
 
+<<<<<<< Updated upstream
+=======
+
+class ProjectTree(Tree):
+    """Project tree that reserves Shift+Left/Right for app-level tab switching."""
+
+    BINDINGS = [
+        Binding("shift+left", "prev_tab_local", show=False),
+        Binding("shift+right", "next_tab_local", show=False),
+    ]
+
+    def action_prev_tab_local(self) -> None:
+        app_prev = getattr(self.app, "action_prev_tab", None)
+        if callable(app_prev):
+            app_prev()
+
+    def action_next_tab_local(self) -> None:
+        app_next = getattr(self.app, "action_next_tab", None)
+        if callable(app_next):
+            app_next()
+
+
+>>>>>>> Stashed changes
 class DockerManager(App):
     """Main application class for the Docker Manager TUI.
     
@@ -40,13 +63,13 @@ class DockerManager(App):
         "../tcss/filter.tcss", "../tcss/standalone_search.tcss",
         "../tcss/project_tab.tcss", "../tcss/shell.tcss", "../tcss/logs.tcss",
         "../tcss/screen.tcss", "../tcss/standalone_tab.tcss", "../tcss/container_info.tcss",
-        "../tcss/loading_screen.tcss", "../tcss/confirm_overlay.tcss"
+        "../tcss/container_stats.tcss", "../tcss/loading_screen.tcss", "../tcss/confirm_overlay.tcss"
     ]
     
     ENABLE_COMMAND_PALETTE = False
     BINDINGS = [
-        Binding("left", "prev_tab", "Previous Tab", show=True),
-        Binding("right", "next_tab", "Next Tab", show=True),
+        Binding("shift+left", "prev_tab", "Previous Tab", show=True),
+        Binding("shift+right", "next_tab", "Next Tab", show=True),
         Binding("tab", "toggle_focus", "Toggle Focus", show=True, key_display="Tab"),
         Binding("ctrl+q", "quit", "Quit", show=True)
     ]
@@ -275,7 +298,6 @@ class DockerManager(App):
 
         try:
             all_projects = get_projects_with_containers()
-
             # Flatten into a {cid: (name, image, status)} dict for comparison
             new_snapshot = {}
             for project, containers in all_projects.items():
@@ -311,6 +333,8 @@ class DockerManager(App):
                     self.uncategorized_cards,
                     self.uncategorized_list
                 )
+            else:
+                await self.sync_card_list([], self.uncategorized_cards, self.uncategorized_list)
 
             # Rebuild Compose Project Tree
             self.project_tree.root.remove_children()
