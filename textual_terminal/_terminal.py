@@ -423,26 +423,62 @@ class TerminalEmulator:
         self.recv_queue = asyncio.Queue()
         self.send_queue = asyncio.Queue()
         self.event = asyncio.Event()
+        self._stopped = False
 
     def start(self):
         self.run_task = asyncio.create_task(self._run())
         self.send_task = asyncio.create_task(self._send_data())
 
     def stop(self):
+        if self._stopped:
+            return
+        self._stopped = True
+
         if self.run_task is not None:
             self.run_task.cancel()
         if self.send_task is not None:
             self.send_task.cancel()
 
-        os.kill(self.pid, signal.SIGTERM)
-        os.waitpid(self.pid, 0)
+        try:
+            loop = asyncio.get_running_loop()
+            loop.remove_reader(self.p_out)
+        except Exception:
+            pass
+
+        try:
+            self.p_out.close()
+        except Exception:
+            pass
+
+        try:
+            pid, _ = os.waitpid(self.pid, os.WNOHANG)
+        except ChildProcessError:
+            pid = self.pid
+
+        if pid == 0:
+            try:
+                os.kill(self.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+
+            try:
+                os.waitpid(self.pid, os.WNOHANG)
+            except ChildProcessError:
+                pass
 
     def open_terminal(self, command: str):
         self.pid, fd = pty.fork()
         if self.pid == 0:
             argv = shlex.split(command)
-            # OPTIMIZE: do not use a fixed LC_ALL
-            env = dict(TERM="xterm", LC_ALL="en_US.UTF-8", HOME=str(Path.home()))
+            # Preserve host PATH and other vars so command lookup works on macOS.
+            env = os.environ.copy()
+            env.update(
+                {
+                    "TERM": "xterm",
+                    "LC_ALL": env.get("LC_ALL", "en_US.UTF-8"),
+                    "HOME": str(Path.home()),
+                }
+            )
             os.execvpe(argv[0], argv, env)
 
         return fd
@@ -452,7 +488,15 @@ class TerminalEmulator:
 
         def on_output():
             try:
-                self.data_or_disconnect = self.p_out.read(65536).decode()
+                raw = self.p_out.read(65536)
+                # On macOS PTYs, child exit may surface as EOF (b"") instead of
+                # raising an exception. Treat that as a disconnect.
+                if raw == b"":
+                    loop.remove_reader(self.p_out)
+                    self.data_or_disconnect = None
+                    self.event.set()
+                    return
+                self.data_or_disconnect = raw.decode()
                 self.event.set()
             except UnicodeDecodeError as error:
                 # NOTE: this happens sometimes, eg in w3m browsing wrongly decoded docs

@@ -338,9 +338,17 @@ class ContainerActionScreen(ModalScreen):
         if tab_id in ("info-tab",) or tab_label == "Info":
             self.call_after_refresh(lambda: asyncio.create_task(self.load_container_info()))
         elif tab_id in ("terminal-tab",) or tab_label == "Terminal":
-            self.call_after_refresh(lambda: self.set_focus(self.query_one("#container-terminal")))
+            self.call_after_refresh(self._focus_terminal_tab)
         else:
             self.set_focus(None)
+
+    def _focus_terminal_tab(self) -> None:
+        try:
+            shell = self.query_one(ContainerShell)
+            shell.ensure_started()
+            self.set_focus(self.query_one("#container-terminal"))
+        except Exception:
+            self.app.bell()
 
     def notify_bindings_change(self) -> None:
         try:
@@ -437,7 +445,7 @@ class ContainerActionScreen(ModalScreen):
             if tc.active in ("info-tab", "Info"):
                 self.call_after_refresh(lambda: asyncio.create_task(self.load_container_info()))
             elif tc.active in ("terminal-tab", "Terminal"):
-                self.call_after_refresh(lambda: self.set_focus(self.query_one("#container-terminal")))
+                self.call_after_refresh(self._focus_terminal_tab)
         except Exception:
             self.app.bell()
 
@@ -457,7 +465,7 @@ class ContainerActionScreen(ModalScreen):
             if tc.active in ("info-tab", "Info"):
                 self.call_after_refresh(lambda: asyncio.create_task(self.load_container_info()))
             elif tc.active in ("terminal-tab", "Terminal"):
-                self.call_after_refresh(lambda: self.set_focus(self.query_one("#container-terminal")))
+                self.call_after_refresh(self._focus_terminal_tab)
         except Exception:
             self.app.bell()
 
@@ -490,7 +498,7 @@ class ContainerActionScreen(ModalScreen):
             if tc.active in ("info-tab", "Info"):
                 self.call_after_refresh(lambda: asyncio.create_task(self.load_container_info()))
             elif tc.active in ("terminal-tab", "Terminal"):
-                self.call_after_refresh(lambda: self.set_focus(self.query_one("#container-terminal")))
+                self.call_after_refresh(self._focus_terminal_tab)
         except Exception:
             self.app.bell()
 
@@ -595,5 +603,4 @@ class ContainerActionScreen(ModalScreen):
         else:
             self.current_match = (self.current_match - 1) % len(self.log_matches)
         self.focus_current_match()
-
 

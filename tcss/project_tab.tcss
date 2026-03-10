@@ -32,7 +32,8 @@
   margin: 0 0;
   background: #1e1e2e;
   height: 1fr;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   width: 20%;
   color: #cdd6f4;
   scrollbar-gutter: stable;
