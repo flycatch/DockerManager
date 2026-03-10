@@ -55,8 +55,10 @@ class ContainerShell(Container):
 
     def compose(self) -> ComposeResult:
         """Create a terminal running docker exec."""
-        shell = "/bin/bash" if shutil.which("bash") else "/bin/sh"
-        docker_cmd = f"docker exec -i -t {self.container_id} {shell}"
+        docker_cmd = (
+            f"docker exec -i -t {self.container_id} "
+            "sh -lc 'command -v bash >/dev/null 2>&1 && exec bash || exec sh'"
+        )
 
         self.terminal = Terminal(
             command=docker_cmd,
@@ -74,4 +76,9 @@ class ContainerShell(Container):
         if self.terminal:
             self.terminal.styles.width = "1fr"
             self.terminal.styles.height = "1fr"
+            self.terminal.start()
+
+    def ensure_started(self) -> None:
+        """Start (or restart) the terminal emulator if it is not running."""
+        if self.terminal:
             self.terminal.start()

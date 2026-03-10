@@ -601,7 +601,7 @@ class ContainerActionScreen(ModalScreen):
             elif tc.active in ("stats-tab", "Stats"):
                 self.call_after_refresh(self._focus_stats_tab)
             elif tc.active in ("terminal-tab", "Terminal"):
-                self.call_after_refresh(lambda: self.set_focus(self.query_one("#container-terminal")))
+                self.call_after_refresh(self._focus_terminal_tab)
         except Exception:
             self.app.bell()
 
@@ -633,7 +633,7 @@ class ContainerActionScreen(ModalScreen):
             elif tc.active in ("stats-tab", "Stats"):
                 self.call_after_refresh(self._focus_stats_tab)
             elif tc.active in ("terminal-tab", "Terminal"):
-                self.call_after_refresh(lambda: self.set_focus(self.query_one("#container-terminal")))
+                self.call_after_refresh(self._focus_terminal_tab)
         except Exception:
             self.app.bell()
 
@@ -668,7 +668,7 @@ class ContainerActionScreen(ModalScreen):
             elif tc.active in ("stats-tab", "Stats"):
                 self.call_after_refresh(self._focus_stats_tab)
             elif tc.active in ("terminal-tab", "Terminal"):
-                self.call_after_refresh(lambda: self.set_focus(self.query_one("#container-terminal")))
+                self.call_after_refresh(self._focus_terminal_tab)
         except Exception:
             self.app.bell()
 
